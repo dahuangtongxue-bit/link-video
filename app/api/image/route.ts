@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,                       // 模型名来自 lib/models.ts
         prompt,
-        size: "1024x1024",           // ← 尺寸：豆包也支持 "2K" / "4K"
+        size: "2048x2048",           // ← Seedream 4.x 要求 ≥3686400 像素，1024x1024 太小会被拒
         response_format: "url",      // ← 要 url；平台只给 base64 就改 "b64_json"
         watermark: false,            // ← 去水印（个别平台没这个字段，删掉即可）
       }),
