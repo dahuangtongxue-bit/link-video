@@ -7,22 +7,27 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { imageUrl, prompt, model } = await req.json().catch(() => ({}));
+  const { imageUrl, prompt, model, resolution, duration } = await req.json().catch(() => ({}));
   if (!imageUrl) return NextResponse.json({ error: "缺少 imageUrl" }, { status: 400 });
 
-  // ---------- MOCK：把"完成时间"编进 taskId，poll 时按时间判断 ----------
+  const res = resolution || "720p";
+  const dur = duration || "5";
+
+  // ---------- MOCK ----------
   if (videoIsMock) {
-    const readyAt = Date.now() + 8000; // 模拟 8 秒
+    const readyAt = Date.now() + 8000;
     return NextResponse.json({ taskId: `mock_${readyAt}` });
   }
 
   // ===================================================================
-  // Seedance 2.0「创建任务」：异步，提交后返回任务 id（火山方舟原生格式）。
-  // 若 零克云 文档不同，重点核对带 ← 的三处：① 路径 ② content 结构 ③ id 字段。
-  // 提示词里的 --resolution / --ratio / --duration 是 Seedance 的文本指令，可按需删改。
+  // Seedance「创建任务」：new-api 网关路径 = POST {BASE}/v1/video/generations，返回任务 id。
+  // 请求体用火山原生 content 数组；清晰度/时长用 --rs / --rt / --dur 文本指令带入。
+  // 若平台报的是「参数/字段」错误（而非 Invalid URL），把文档里的创建任务 JSON 发我，
+  // 大概率是 content 数组 vs 扁平字段（model/prompt/image_url）的区别，改这段 body 即可。
   // ===================================================================
   try {
-    const r = await fetch(`${VIDEO_BASE_URL}/api/v3/contents/generations/tasks`, {  // ← 接口路径
+    const url = `${VIDEO_BASE_URL}/v1/video/generations`; // ← 接口路径
+    const r = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -30,10 +35,10 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model,
-        content: [                                                                   // ← content 数组
+        content: [                                                           // ← 请求体结构
           {
             type: "text",
-            text: `${prompt || "让画面自然动起来"} --resolution 1080p --ratio adaptive --duration 5`,
+            text: `${prompt || "让画面自然动起来"} --rs ${res} --rt adaptive --dur ${dur}`,
           },
           { type: "image_url", image_url: { url: imageUrl } },
         ],
@@ -46,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await r.json();
-    const taskId: string | undefined = data?.id || data?.task_id || data?.data?.id;  // ← 取任务 id
+    const taskId: string | undefined = data?.id || data?.task_id || data?.data?.id; // ← 取任务 id
     if (!taskId) return NextResponse.json({ error: "未从响应解析到任务 ID" }, { status: 502 });
 
     return NextResponse.json({ taskId });
