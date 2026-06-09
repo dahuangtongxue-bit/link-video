@@ -25,15 +25,13 @@ export async function GET(req: NextRequest) {
   }
 
   // ===================================================================
-  // Seedance 2.0「查询任务」：火山方舟原生格式。核对带 ← 的三处：
-  //   ① 路径 ② 状态字段/取值 ③ 出片 url 的字段
-  // 状态约定：queued/running/processing = 还在跑；succeeded = 完成；failed/cancelled = 失败
+  // Seedance「查询任务」：new-api 网关路径 = GET {BASE}/v1/video/generations/{task_id}。
+  // 核对带 ← 的：① 状态字段/取值 ② 出片 url 的字段。
+  // 状态约定：queued/running/processing = 还在跑；succeeded = 完成；failed/cancelled = 失败。
   // ===================================================================
   try {
-    const r = await fetch(
-      `${VIDEO_BASE_URL}/api/v3/contents/generations/tasks/${encodeURIComponent(taskId)}`, // ← 路径
-      { headers: { Authorization: `Bearer ${VIDEO_API_KEY}` } }
-    );
+    const url = `${VIDEO_BASE_URL}/v1/video/generations/${encodeURIComponent(taskId)}`; // ← 接口路径
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${VIDEO_API_KEY}` } });
 
     if (!r.ok) {
       const t = await r.text();
@@ -50,7 +48,7 @@ export async function GET(req: NextRequest) {
     if (["failed", "error", "cancelled", "canceled"].includes(s)) {
       return NextResponse.json({ status: "error", error: data?.error?.message || data?.error || "生成失败" });
     }
-    // 还在跑
+    // queued / running / processing → 还在跑
     return NextResponse.json({ status: "pending", progress: data?.progress });
   } catch (e: any) {
     return NextResponse.json({ status: "error", error: e?.message || "请求平台失败" });
