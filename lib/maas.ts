@@ -1,5 +1,5 @@
-// 前端调用封装。注意：这里只调自己的 /api 路由 / Netlify 函数，绝不直接碰平台 key。
-// 访问口令存在 localStorage，作为请求头/请求体带上。
+// 前端调用封装。注意：这里只调自己的 /api 路由，绝不直接碰平台 key。
+// 访问口令存在 localStorage，作为请求头带上。
 
 const KEY_STORE = "ai-canvas-access-key";
 
@@ -26,7 +26,7 @@ async function readError(res: Response): Promise<string> {
   }
 }
 
-// 文生图：一次返回图片地址（不变）
+// 文生图：一次返回图片地址
 export async function generateImage(prompt: string, model: string): Promise<string> {
   const res = await fetch("/api/image", {
     method: "POST",
@@ -39,8 +39,7 @@ export async function generateImage(prompt: string, model: string): Promise<stri
   return data.imageUrl as string;
 }
 
-// 图生视频：提交到「后台函数」，立刻拿到 jobId。
-// 后台函数最多跑 15 分钟，负责扛那个会阻塞几十秒的同步渲染请求，绕开 10 秒限制。
+// 图生视频：提交任务，拿 taskId（提交是秒回的异步任务）
 export async function submitVideo(input: {
   imageUrl: string;
   prompt: string;
@@ -48,15 +47,15 @@ export async function submitVideo(input: {
   resolution?: string;
   duration?: string;
 }): Promise<string> {
-  const jobId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const res = await fetch("/.netlify/functions/video-render-background", {
+  const res = await fetch("/api/video/submit", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jobId, accessKey: getAccessKey(), ...input }),
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(input),
   });
-  // 后台函数受理后会立刻返回 202；只要不是明确错误码就算提交成功
-  if (res.status >= 400) throw new Error(await readError(res));
-  return jobId;
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json();
+  if (!data.taskId) throw new Error("未拿到任务 ID");
+  return data.taskId as string;
 }
 
 export interface PollResult {
@@ -66,16 +65,17 @@ export interface PollResult {
   error?: string;
 }
 
-// 查询一次任务状态：读后台函数写入 Blobs 的结果
-export async function pollVideoOnce(taskId: string, _model: string): Promise<PollResult> {
+// 查询一次任务状态
+export async function pollVideoOnce(taskId: string, model: string): Promise<PollResult> {
   const res = await fetch(
-    `/.netlify/functions/video-result?jobId=${encodeURIComponent(taskId)}`
+    `/api/video/poll?taskId=${encodeURIComponent(taskId)}&model=${encodeURIComponent(model)}`,
+    { headers: authHeaders() }
   );
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
 
-// 轮询直到完成 / 失败 / 超时
+// 轮询直到完成 / 失败 / 超时。渲染约 2~3 分钟，maxMs 给到 8 分钟留足余量。
 export async function pollVideoUntilDone(
   taskId: string,
   model: string,
@@ -84,7 +84,7 @@ export async function pollVideoUntilDone(
   opts: { intervalMs?: number; maxMs?: number } = {}
 ): Promise<string> {
   const intervalMs = opts.intervalMs ?? 4000;
-  const maxMs = opts.maxMs ?? 10 * 60 * 1000;
+  const maxMs = opts.maxMs ?? 8 * 60 * 1000;
   const start = Date.now();
 
   while (Date.now() - start < maxMs) {
@@ -98,7 +98,7 @@ export async function pollVideoUntilDone(
   throw new Error("生成超时");
 }
 
-// 访问口令相关（不变）
+// 访问口令相关
 export async function isAccessRequired(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth");
