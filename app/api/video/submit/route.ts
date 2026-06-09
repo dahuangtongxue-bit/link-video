@@ -7,11 +7,13 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { imageUrl, prompt, model, resolution, duration } = await req.json().catch(() => ({}));
+  const { imageUrl, prompt, model, resolution, duration } = await req
+    .json()
+    .catch(() => ({} as any));
   if (!imageUrl) return NextResponse.json({ error: "缺少 imageUrl" }, { status: 400 });
 
-  const res = resolution || "720p";
-  const dur = duration || "5";
+  const dur = Number(duration) || 5;
+  const res = (resolution || "720p").toString().toLowerCase(); // 480p / 720p / 1080p
 
   // ---------- MOCK ----------
   if (videoIsMock) {
@@ -20,39 +22,52 @@ export async function POST(req: NextRequest) {
   }
 
   // ===================================================================
-  // Seedance「创建任务」：new-api 网关路径 = POST {BASE}/v1/video/generations，返回任务 id。
-  // 请求体用火山原生 content 数组；清晰度/时长用 --rs / --rt / --dur 文本指令带入。
-  // 若平台报的是「参数/字段」错误（而非 Invalid URL），把文档里的创建任务 JSON 发我，
-  // 大概率是 content 数组 vs 扁平字段（model/prompt/image_url）的区别，改这段 body 即可。
+  // 创建任务：POST {BASE}/v1/video/generations
+  // New API 视频用「扁平字段」（不是火山 content 数组）：
+  //   model(必填) / prompt(必填) / image(图URL) / duration(秒) / metadata(供应商自定义)
+  // 成功返回 201 + { task_id, status:"processing" } —— 查询要用 task_id。
   // ===================================================================
   try {
-    const url = `${VIDEO_BASE_URL}/v1/video/generations`; // ← 接口路径
+    const url = `${VIDEO_BASE_URL}/v1/video/generations`;
+    const body = {
+      model,
+      prompt:
+        prompt && prompt.trim() ? prompt.trim() : "让画面自然地动起来，保持主体稳定、镜头平滑",
+      image: imageUrl,
+      duration: dur,
+      metadata: { resolution: res }, // 供应商自定义参数；不支持会被忽略，不影响提交
+    };
+
     const r = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${VIDEO_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        content: [                                                           // ← 请求体结构
-          {
-            type: "text",
-            text: `${prompt || "让画面自然动起来"} --rs ${res} --rt adaptive --dur ${dur}`,
-          },
-          { type: "image_url", image_url: { url: imageUrl } },
-        ],
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${VIDEO_API_KEY}` },
+      body: JSON.stringify(body),
     });
 
-    if (!r.ok) {
-      const t = await r.text();
-      return NextResponse.json({ error: `平台返回错误: ${t.slice(0, 300)}` }, { status: 502 });
+    const text = await r.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      /* 平台返回非 JSON */
     }
 
-    const data = await r.json();
-    const taskId: string | undefined = data?.id || data?.task_id || data?.data?.id; // ← 取任务 id
-    if (!taskId) return NextResponse.json({ error: "未从响应解析到任务 ID" }, { status: 502 });
+    if (!r.ok) {
+      return NextResponse.json(
+        { error: `平台返回错误(${r.status}): ${text.slice(0, 300)}` },
+        { status: 502 }
+      );
+    }
+
+    // 关键：查询用 task_id，不是 id
+    const taskId: string | undefined =
+      data?.task_id || data?.data?.task_id || data?.id || data?.data?.id;
+    if (!taskId) {
+      return NextResponse.json(
+        { error: `未解析到 task_id，平台返回: ${text.slice(0, 200)}` },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({ taskId });
   } catch (e: any) {
