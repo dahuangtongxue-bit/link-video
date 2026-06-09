@@ -44,6 +44,8 @@ export async function submitVideo(input: {
   imageUrl: string;
   prompt: string;
   model: string;
+  resolution?: string;
+  duration?: string;
 }): Promise<string> {
   const res = await fetch("/api/video/submit", {
     method: "POST",
