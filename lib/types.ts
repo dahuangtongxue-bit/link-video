@@ -21,6 +21,8 @@ export type ImageShape = TLBaseShape<
     model: string; // 生成它的模型
     videoModel: string; // 下一步图生视频要用的模型
     motion: string; // 图生视频的运动提示词
+    videoResolution: string; // 480p / 720p / 1080p
+    videoDuration: string; // 秒数，如 "5"
     status: string; // generating | done | error
     imageUrl: string;
     error: string;
