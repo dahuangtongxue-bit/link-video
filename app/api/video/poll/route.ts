@@ -7,39 +7,40 @@ export const dynamic = "force-dynamic";
 const SAMPLE_VIDEO =
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
-function isUrl(s: any): s is string {
+function isHttp(s: any): s is string {
   return typeof s === "string" && /^https?:\/\//i.test(s);
 }
-
-// 从返回里挖视频地址。
-// 关键：零克云/new-api 这个渠道把「成片地址」塞在 fail_reason 字段里（命名误导，但确实是 mp4 地址）。
-function pickVideoUrl(d: any): string | undefined {
-  if (!d || typeof d !== "object") return undefined;
-  const candidates = [
-    d.url,
-    d.video_url,
-    d.videoUrl,
-    d.content?.video_url,
-    d.output?.video_url,
-    d.output?.url,
-    d.result?.video_url,
-    d.video?.url,
-    d.data?.url,
-    d.data?.video_url,
-    d.data?.content?.video_url,
-    Array.isArray(d.data) ? d.data[0]?.url || d.data[0]?.video_url : undefined,
-    d.fail_reason, // ← 成片地址藏在这
-    d.data?.fail_reason,
-  ];
-  for (const c of candidates) {
-    if (isUrl(c)) return c;
-  }
-  return undefined;
+function looksLikeVideo(s: any): boolean {
+  return isHttp(s) && /\.(mp4|mov|webm|m4v)(\?|$)/i.test(s);
 }
 
-function pickStatus(d: any): string {
-  const s = d?.status ?? d?.task_status ?? d?.state ?? d?.data?.status ?? "";
-  return String(s).toLowerCase();
+// 递归把成片地址挖出来。零克云返回层层嵌套，地址同时出现在
+// data.fail_reason 和 data.data.content.video_url，这里无脑深挖，谁先命中用谁。
+function findVideoUrl(obj: any, depth = 0): string | undefined {
+  if (obj == null || depth > 8) return undefined;
+  if (typeof obj === "string") return looksLikeVideo(obj) ? obj : undefined;
+  if (Array.isArray(obj)) {
+    for (const x of obj) {
+      const u = findVideoUrl(x, depth + 1);
+      if (u) return u;
+    }
+    return undefined;
+  }
+  if (typeof obj === "object") {
+    // 明确的视频字段优先（即便没扩展名也认）
+    if (isHttp(obj.video_url)) return obj.video_url;
+    if (isHttp(obj.videoUrl)) return obj.videoUrl;
+    if (obj.content && isHttp(obj.content.video_url)) return obj.content.video_url;
+    // fail_reason / url 里若像视频地址也认
+    if (looksLikeVideo(obj.fail_reason)) return obj.fail_reason;
+    if (looksLikeVideo(obj.url)) return obj.url;
+    // 兜底：继续往里挖
+    for (const k of Object.keys(obj)) {
+      const u = findVideoUrl(obj[k], depth + 1);
+      if (u) return u;
+    }
+  }
+  return undefined;
 }
 
 export async function GET(req: NextRequest) {
@@ -75,22 +76,30 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ① 拿到视频地址 → 完成（成片地址在 fail_reason / url）
-    const videoUrl = pickVideoUrl(data);
+    // ① 挖到视频地址 → 完成
+    const videoUrl = findVideoUrl(data);
     if (videoUrl) return NextResponse.json({ status: "done", videoUrl });
 
-    // ② 明确失败 → 报错（此时 fail_reason 才是真正的错误信息）
-    const s = pickStatus(data);
+    // ② 明确失败 → 报错（此时 fail_reason 才是真正的错误文字）
+    const s = String(
+      data?.data?.data?.status ?? data?.data?.status ?? data?.status ?? ""
+    ).toLowerCase();
     const failStatuses = ["failed", "failure", "fail", "error", "cancelled", "canceled", "rejected"];
     if (failStatuses.includes(s)) {
-      const fr = data?.fail_reason;
-      const msg = isUrl(fr) ? "生成失败" : fr || data?.error?.message || data?.error || "生成失败";
+      const fr = data?.data?.fail_reason ?? data?.fail_reason;
+      const msg = typeof fr === "string" && !isHttp(fr) ? fr : "生成失败";
       return NextResponse.json({ status: "error", error: msg });
     }
 
-    // ③ 仍在进行（带 raw 兜底，万一格式还有出入能看清）
-    const progress = data?.progress ?? data?.data?.progress ?? data?.percent;
-    return NextResponse.json({ status: "pending", progress, raw: data ?? text.slice(0, 400) });
+    // ③ 仍在进行（进度可能是 "60%" 字符串，转成数字）
+    let progress: number | undefined;
+    const rawProg = data?.data?.progress ?? data?.progress ?? data?.data?.data?.progress;
+    if (typeof rawProg === "string") {
+      const n = parseInt(rawProg, 10);
+      if (!isNaN(n)) progress = n;
+    } else if (typeof rawProg === "number") progress = rawProg;
+
+    return NextResponse.json({ status: "pending", progress });
   } catch (e: any) {
     return NextResponse.json({ status: "error", error: e?.message || "请求平台失败" });
   }
