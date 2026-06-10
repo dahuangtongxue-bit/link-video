@@ -22,22 +22,31 @@ export default function Canvas() {
   const onMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
-    // ① 级联清理：删除卡片时，把绑在它身上的箭头一并删掉
-    editor.sideEffects.registerBeforeDeleteHandler("shape", (shape) => {
-      if (shape.type === "arrow") return; // 箭头自己被删不用管
-      const bindings = editor.getBindingsToShape(shape.id, "arrow");
-      const arrowIds = Array.from(new Set(bindings.map((b) => b.fromId))).filter((id) =>
-        editor.getShape(id)
+    // 清扫「孤儿箭头」：两头没有都连着卡片的箭头一律清除
+    const sweepOrphanArrows = () => {
+      const arrows = editor.getCurrentPageShapes().filter((s) => s.type === "arrow");
+      const orphans = arrows.filter(
+        (a) => editor.getBindingsFromShape(a.id, "arrow").length < 2
       );
-      if (arrowIds.length) editor.deleteShapes(arrowIds);
+      if (orphans.length) editor.deleteShapes(orphans.map((s) => s.id));
+    };
+
+    // 删除任何卡片后，下一拍自动清扫一次。
+    // 注：tldraw 删卡时会“先”拆掉箭头绑定、“后”触发删除钩子，
+    // 所以不能在删除钩子里按绑定找箭头，而是事后统一清扫。
+    let sweepScheduled = false;
+    editor.sideEffects.registerAfterDeleteHandler("shape", (shape) => {
+      if (shape.type === "arrow") return;
+      if (sweepScheduled) return;
+      sweepScheduled = true;
+      setTimeout(() => {
+        sweepScheduled = false;
+        sweepOrphanArrows();
+      }, 0);
     });
 
-    // ② 孤儿清扫：历史遗留的、两头没有都连着卡片的箭头，打开画布时自动清除
-    const arrows = editor.getCurrentPageShapes().filter((s) => s.type === "arrow");
-    const orphans = arrows.filter(
-      (a) => editor.getBindingsFromShape(a.id, "arrow").length < 2
-    );
-    if (orphans.length) editor.deleteShapes(orphans.map((s) => s.id));
+    // 打开画布先清一遍历史遗留
+    sweepOrphanArrows();
 
     setReady(true);
   }, []);
