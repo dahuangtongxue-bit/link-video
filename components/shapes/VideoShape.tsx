@@ -137,7 +137,35 @@ function VideoCard({ shape }: { shape: VideoShape }) {
           )}
           {status === "error" && (
             <div style={{ padding: 16, fontSize: 12, color: "#fca5a5", textAlign: "center" }}>
-              生成失败：{error}
+              <div>生成失败：{error}</div>
+              {taskId ? (
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    // 只是继续查询已有任务，不会重新提交、不会重新扣费
+                    editor.updateShape<VideoShape>({
+                      id: shapeId,
+                      type: "video-card",
+                      props: { status: "generating", error: "" },
+                    });
+                  }}
+                  style={{
+                    marginTop: 10,
+                    appearance: "none",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#fff",
+                    background: TOKENS.video,
+                    cursor: "pointer",
+                    pointerEvents: "all",
+                  }}
+                >
+                  重试查询（不重新扣费）
+                </button>
+              ) : null}
             </div>
           )}
           {status === "done" && videoUrl && (
