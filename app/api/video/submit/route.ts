@@ -12,6 +12,14 @@ export async function POST(req: NextRequest) {
     .catch(() => ({} as any));
   if (!imageUrl) return NextResponse.json({ error: "缺少 imageUrl" }, { status: 400 });
 
+  // 超大 base64 防线：旧版上传的未压缩原图会压垮请求链路，明确拒绝并给出指引
+  if (imageUrl.startsWith("data:") && imageUrl.length > 4_000_000) {
+    return NextResponse.json(
+      { error: "上传图过大。请删除该图片卡后重新上传（新版上传会自动压缩）" },
+      { status: 400 }
+    );
+  }
+
   const dur = Number(duration) || 5;
   const res = (resolution || "720p").toString().toLowerCase(); // 480p / 720p / 1080p
 
