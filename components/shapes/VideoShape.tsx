@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor } from "tldraw";
 import type { VideoShape } from "@/lib/types";
 import { pollVideoUntilDone } from "@/lib/maas";
@@ -8,18 +8,16 @@ import { TOKENS, cardShell, labelStyle } from "./cardStyles";
 
 function VideoCard({ shape }: { shape: VideoShape }) {
   const editor = useEditor();
-  const startedRef = useRef(false);
   const { status, taskId, videoUrl, progress, error, model, w, h } = shape.props;
   const shapeId = shape.id;
 
-  // 轮询：组件挂载时若任务还在跑就开始（刷新页面后也能续上）
+  // 轮询：只要卡片处于「生成中」且有任务号，就保证有一个轮询循环在跑。
+  // 首次挂载、刷新页面、画布滚回视野（组件重建）都会自动续上；组件卸载时停掉旧循环。
   useEffect(() => {
-    if (startedRef.current) return;
     if (status !== "generating" || !taskId || videoUrl) return;
 
-    startedRef.current = true;
     let cancelled = false;
-    const alive = () => !cancelled && !!editor.getShape(shapeId);
+    const shapeExists = () => !!editor.getShape(shapeId);
 
     (async () => {
       try {
@@ -27,7 +25,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
           taskId,
           model,
           (p) => {
-            if (alive() && typeof p === "number") {
+            if (!cancelled && typeof p === "number" && shapeExists()) {
               editor.updateShape<VideoShape>({
                 id: shapeId,
                 type: "video-card",
@@ -35,9 +33,9 @@ function VideoCard({ shape }: { shape: VideoShape }) {
               });
             }
           },
-          () => !alive()
+          () => cancelled
         );
-        if (alive()) {
+        if (!cancelled && shapeExists()) {
           editor.updateShape<VideoShape>({
             id: shapeId,
             type: "video-card",
@@ -45,11 +43,13 @@ function VideoCard({ shape }: { shape: VideoShape }) {
           });
         }
       } catch (e: any) {
-        if (alive()) {
+        const msg = String(e?.message || e);
+        if (msg === "已取消") return; // 卸载/删除导致的正常停止，不写状态
+        if (!cancelled && shapeExists()) {
           editor.updateShape<VideoShape>({
             id: shapeId,
             type: "video-card",
-            props: { status: "error", error: String(e?.message || e) },
+            props: { status: "error", error: msg },
           });
         }
       }
@@ -59,7 +59,24 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, taskId]);
+  }, [status, taskId, videoUrl]);
+
+  // 看门狗：卡片停留在「提交任务…」超过 30 秒（多半是提交时被刷新打断），给出明确提示
+  useEffect(() => {
+    if (status !== "submitting") return;
+    const timer = setTimeout(() => {
+      const s = editor.getShape(shapeId) as VideoShape | undefined;
+      if (s && s.props.status === "submitting") {
+        editor.updateShape<VideoShape>({
+          id: shapeId,
+          type: "video-card",
+          props: { status: "error", error: "提交未完成（可能被刷新打断），请删除后重新生成" },
+        });
+      }
+    }, 30000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   return (
     <HTMLContainer>
