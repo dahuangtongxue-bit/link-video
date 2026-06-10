@@ -7,6 +7,16 @@ export const dynamic = "force-dynamic";
 const SAMPLE_VIDEO =
   "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
+// ===== 备用真相通道：零克云控制台 API（new-api /api/task/self）=====
+// 主查询接口（/v1/video/generations/{id}）偶发返回「提交瞬间的过期快照」——
+// 任务实际已成功、已扣费，但该接口永远说 IN_PROGRESS。
+// 控制台通道读取任务库的最终状态（status / fail_reason / result_url），可作兜底。
+// 需要两个环境变量（缺省时本通道自动停用，不影响主流程）：
+//   CONSOLE_ACCESS_TOKEN  控制台「个人设置 → 访问令牌」生成的令牌
+//   CONSOLE_USER_ID       账号数字 ID
+const CONSOLE_ACCESS_TOKEN = process.env.CONSOLE_ACCESS_TOKEN || "";
+const CONSOLE_USER_ID = process.env.CONSOLE_USER_ID || "";
+
 function isHttp(s: any): s is string {
   return typeof s === "string" && /^https?:\/\//i.test(s);
 }
@@ -14,8 +24,7 @@ function looksLikeVideo(s: any): boolean {
   return isHttp(s) && /\.(mp4|mov|webm|m4v)(\?|$)/i.test(s);
 }
 
-// 递归把成片地址挖出来。零克云返回层层嵌套，地址同时出现在
-// data.fail_reason 和 data.data.content.video_url，这里无脑深挖，谁先命中用谁。
+// 递归挖成片地址：兼容 fail_reason / result_url / data.content.video_url 等所有已知形态
 function findVideoUrl(obj: any, depth = 0): string | undefined {
   if (obj == null || depth > 8) return undefined;
   if (typeof obj === "string") return looksLikeVideo(obj) ? obj : undefined;
@@ -27,20 +36,42 @@ function findVideoUrl(obj: any, depth = 0): string | undefined {
     return undefined;
   }
   if (typeof obj === "object") {
-    // 明确的视频字段优先（即便没扩展名也认）
     if (isHttp(obj.video_url)) return obj.video_url;
     if (isHttp(obj.videoUrl)) return obj.videoUrl;
+    if (isHttp(obj.result_url)) return obj.result_url;
     if (obj.content && isHttp(obj.content.video_url)) return obj.content.video_url;
-    // fail_reason / url 里若像视频地址也认
     if (looksLikeVideo(obj.fail_reason)) return obj.fail_reason;
     if (looksLikeVideo(obj.url)) return obj.url;
-    // 兜底：继续往里挖
     for (const k of Object.keys(obj)) {
       const u = findVideoUrl(obj[k], depth + 1);
       if (u) return u;
     }
   }
   return undefined;
+}
+
+const FAIL_STATUSES = ["failed", "failure", "fail", "error", "cancelled", "canceled", "rejected"];
+
+// 通道 B：按 task_id 精确查控制台任务记录
+async function queryConsoleTask(taskId: string): Promise<any | null> {
+  if (!CONSOLE_ACCESS_TOKEN || !CONSOLE_USER_ID) return null;
+  try {
+    const u = `${VIDEO_BASE_URL}/api/task/self?p=1&page_size=10&task_id=${encodeURIComponent(taskId)}`;
+    const r = await fetch(u, {
+      headers: {
+        Authorization: CONSOLE_ACCESS_TOKEN,
+        "New-Api-User": CONSOLE_USER_ID,
+      },
+      cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const j: any = await r.json().catch(() => null);
+    const items = j?.data?.items;
+    if (!Array.isArray(items)) return null;
+    return items.find((t: any) => t?.task_id === taskId) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -59,10 +90,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: "pending", progress });
   }
 
-  // 查询任务：GET {BASE}/v1/video/generations/{task_id}
   try {
+    // ===== 通道 A：标准查询接口 =====
     const url = `${VIDEO_BASE_URL}/v1/video/generations/${encodeURIComponent(taskId)}`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${VIDEO_API_KEY}` } });
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${VIDEO_API_KEY}` },
+      cache: "no-store",
+    });
     const text = await r.text();
     let data: any = null;
     try {
@@ -76,27 +110,40 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ① 挖到视频地址 → 完成
+    // ① 通道 A 给出成片 → 完成
     const videoUrl = findVideoUrl(data);
     if (videoUrl) return NextResponse.json({ status: "done", videoUrl });
 
-    // ② 明确失败 → 报错（此时 fail_reason 才是真正的错误文字）
-    const s = String(
+    // ② 通道 A 明确说失败 → 报错
+    const sA = String(
       data?.data?.data?.status ?? data?.data?.status ?? data?.status ?? ""
     ).toLowerCase();
-    const failStatuses = ["failed", "failure", "fail", "error", "cancelled", "canceled", "rejected"];
-    if (failStatuses.includes(s)) {
+    if (FAIL_STATUSES.includes(sA)) {
       const fr = data?.data?.fail_reason ?? data?.fail_reason;
-      const msg = typeof fr === "string" && !isHttp(fr) ? fr : "生成失败";
+      const msg = typeof fr === "string" && !isHttp(fr) && fr ? fr : "生成失败";
       return NextResponse.json({ status: "error", error: msg });
     }
 
-    // ③-0 僵尸任务检测：提交超过 10 分钟还没开始渲染（start_time=0），
-    //      基本是卡死在平台侧了（正常任务提交后几秒内就会开始）。
-    //      与其让用户白等十几分钟，不如直接给出明确结论和任务ID。
+    // ===== 通道 B：通道 A 说「还没好」时，向控制台核实真相 =====
+    const ct = await queryConsoleTask(taskId);
+    let consoleSaysSuccess = false;
+    if (ct) {
+      const u2 = findVideoUrl(ct);
+      if (u2) return NextResponse.json({ status: "done", videoUrl: u2 });
+      const sB = String(ct.status ?? "").toLowerCase();
+      if (FAIL_STATUSES.includes(sB)) {
+        const fr2 = typeof ct.fail_reason === "string" && !isHttp(ct.fail_reason) ? ct.fail_reason : "";
+        return NextResponse.json({ status: "error", error: fr2 || "生成失败" });
+      }
+      consoleSaysSuccess = sB === "success";
+    }
+
+    // ③ 僵尸任务检测：提交超过 10 分钟还没开始渲染（start_time=0），
+    //    且控制台也没有更好的消息 → 基本是卡死在平台侧了
     const submitTime = data?.data?.submit_time;
     const startTime = data?.data?.start_time;
     if (
+      !consoleSaysSuccess &&
       typeof submitTime === "number" &&
       submitTime > 0 &&
       startTime === 0 &&
@@ -108,7 +155,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ③ 仍在进行（进度可能是 "60%" 字符串，转成数字）
+    // ④ 仍在进行（进度可能是 "60%" 字符串，转成数字）
     let progress: number | undefined;
     const rawProg = data?.data?.progress ?? data?.progress ?? data?.data?.data?.progress;
     if (typeof rawProg === "string") {
