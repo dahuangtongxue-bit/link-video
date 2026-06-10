@@ -91,6 +91,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ status: "error", error: msg });
     }
 
+    // ③-0 僵尸任务检测：提交超过 10 分钟还没开始渲染（start_time=0），
+    //      基本是卡死在平台侧了（正常任务提交后几秒内就会开始）。
+    //      与其让用户白等十几分钟，不如直接给出明确结论和任务ID。
+    const submitTime = data?.data?.submit_time;
+    const startTime = data?.data?.start_time;
+    if (
+      typeof submitTime === "number" &&
+      submitTime > 0 &&
+      startTime === 0 &&
+      Date.now() / 1000 - submitTime > 600
+    ) {
+      return NextResponse.json({
+        status: "error",
+        error: `平台超过10分钟未开始处理，疑似卡死。请删除卡片重新生成（如需反馈给零克云，任务ID：${taskId}）`,
+      });
+    }
+
     // ③ 仍在进行（进度可能是 "60%" 字符串，转成数字）
     let progress: number | undefined;
     const rawProg = data?.data?.progress ?? data?.progress ?? data?.data?.data?.progress;
