@@ -21,6 +21,24 @@ export default function Canvas() {
 
   const onMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
+
+    // ① 级联清理：删除卡片时，把绑在它身上的箭头一并删掉
+    editor.sideEffects.registerBeforeDeleteHandler("shape", (shape) => {
+      if (shape.type === "arrow") return; // 箭头自己被删不用管
+      const bindings = editor.getBindingsToShape(shape.id, "arrow");
+      const arrowIds = Array.from(new Set(bindings.map((b) => b.fromId))).filter((id) =>
+        editor.getShape(id)
+      );
+      if (arrowIds.length) editor.deleteShapes(arrowIds);
+    });
+
+    // ② 孤儿清扫：历史遗留的、两头没有都连着卡片的箭头，打开画布时自动清除
+    const arrows = editor.getCurrentPageShapes().filter((s) => s.type === "arrow");
+    const orphans = arrows.filter(
+      (a) => editor.getBindingsFromShape(a.id, "arrow").length < 2
+    );
+    if (orphans.length) editor.deleteShapes(orphans.map((s) => s.id));
+
     setReady(true);
   }, []);
 
