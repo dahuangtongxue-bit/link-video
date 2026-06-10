@@ -106,24 +106,24 @@ export async function pollVideoOnce(taskId: string, model: string): Promise<Poll
   return res.json();
 }
 
-// 轮询直到完成 / 失败 / 超时。
+// 轮询直到完成 / 失败 / 次数用尽。
 // 关键设计：
-//  - 每次查询自带超时，卡住会被斩断并自动重试，循环不会被冻死；
-//  - 偶发网络错误容忍（连续 8 次才报错）；
-//  - 时间到了先补查最后一次再判超时（防电脑睡眠把时间“睡”过去造成误判）。
+//  - 预算按「实际查询次数」计，不按墙上时钟 —— 电脑睡眠、标签页切走/被冻结
+//    都不消耗预算，醒来自动接着查，绝不会因为“睡过去了”而误判超时；
+//  - 每次查询自带 20s 超时，卡住会被斩断并自动重试，循环不会被冻死；
+//  - 偶发网络错误容忍（连续 10 次才报错，覆盖唤醒后网络恢复的几秒）。
 export async function pollVideoUntilDone(
   taskId: string,
   model: string,
   onProgress: (p?: number) => void,
   isCancelled: () => boolean,
-  opts: { intervalMs?: number; maxMs?: number } = {}
+  opts: { intervalMs?: number; maxAttempts?: number } = {}
 ): Promise<string> {
   const intervalMs = opts.intervalMs ?? 4000;
-  const maxMs = opts.maxMs ?? 10 * 60 * 1000;
-  const start = Date.now();
+  const maxAttempts = opts.maxAttempts ?? 200; // ≈ 前台连续查 13 分钟的量
   let consecutiveErrors = 0;
 
-  while (Date.now() - start < maxMs) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (isCancelled()) throw new Error("已取消");
 
     try {
@@ -136,7 +136,7 @@ export async function pollVideoUntilDone(
       if (e instanceof TaskFailedError) throw e;
       if (isCancelled()) throw new Error("已取消");
       consecutiveErrors++;
-      if (consecutiveErrors >= 8) {
+      if (consecutiveErrors >= 10) {
         throw new Error(`查询连续出错：${e?.message || e}`);
       }
     }
@@ -145,12 +145,7 @@ export async function pollVideoUntilDone(
     await sleep(intervalMs);
   }
 
-  // 最后的机会：再查一次，真没有才判超时
-  try {
-    const r = await pollVideoOnce(taskId, model);
-    if (r.status === "done" && r.videoUrl) return r.videoUrl;
-  } catch {}
-  throw new Error("生成超时，请删除卡片后重新生成");
+  throw new Error("查询次数用尽（任务可能仍在后台进行），请删除卡片后重新生成");
 }
 
 // 访问口令相关
