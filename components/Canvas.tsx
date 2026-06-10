@@ -71,26 +71,62 @@ export default function Canvas() {
     editor.select(id);
   }
 
+  // 上传图压缩：长边压到 1600px、转 JPEG。
+  // 手机原图几 MB 的 base64 会压垮提交链路（Netlify 6MB 上限 + 网关拒收），
+  // 压缩后一般只有 200~500KB，直传 base64 没问题（网关原样转发给火山引擎）。
+  async function fileToCompressedDataUrl(file: File): Promise<string> {
+    const rawUrl: string = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result as string);
+      r.onerror = () => rej(new Error("读取文件失败"));
+      r.readAsDataURL(file);
+    });
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error("图片解析失败（HEIC 等格式请先转成 JPG/PNG）"));
+      i.src = rawUrl;
+    });
+    const draw = (maxEdge: number, quality: number) => {
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("浏览器不支持画布压缩");
+      ctx.fillStyle = "#ffffff"; // PNG 透明底转 JPEG 时垫白，避免变黑
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      return canvas.toDataURL("image/jpeg", quality);
+    };
+    let out = draw(1600, 0.85);
+    if (out.length > 2_500_000) out = draw(1280, 0.75); // 仍偏大就再压一档
+    return out;
+  }
+
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const editor = editorRef.current;
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!editor || !file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const c = centerPoint(editor);
-      const id = createShapeId();
-      editor.createShape({
-        id,
-        type: "image-card",
-        x: c.x - 160,
-        y: c.y - 200,
-        props: { status: "done", imageUrl: dataUrl, prompt: "(上传)" },
+    fileToCompressedDataUrl(file)
+      .then((dataUrl) => {
+        const c = centerPoint(editor);
+        const id = createShapeId();
+        editor.createShape({
+          id,
+          type: "image-card",
+          x: c.x - 160,
+          y: c.y - 200,
+          props: { status: "done", imageUrl: dataUrl, prompt: "(上传)" },
+        });
+        editor.select(id);
+      })
+      .catch((err) => {
+        window.alert(String(err?.message || err));
       });
-      editor.select(id);
-    };
-    reader.readAsDataURL(file);
   }
 
   return (
