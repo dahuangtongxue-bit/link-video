@@ -1,6 +1,6 @@
 import type { TLBaseShape } from "tldraw";
 
-// 提示词卡片：输入文字 + 选图片模型 -> 生成图片
+// 提示词卡片：输入文字 + 选图片模型/分辨率 -> 生成图片
 export type PromptShape = TLBaseShape<
   "prompt-card",
   {
@@ -8,6 +8,7 @@ export type PromptShape = TLBaseShape<
     h: number;
     prompt: string;
     imageModel: string;
+    size: string; // 1K / 2K / 4K
   }
 >;
 
@@ -29,7 +30,7 @@ export type ImageShape = TLBaseShape<
   }
 >;
 
-// 视频卡片：来自图生视频
+// 视频卡片：来自图生视频，或工具栏「生成视频」直接创建（config 配置态）
 export type VideoShape = TLBaseShape<
   "video-card",
   {
@@ -37,10 +38,14 @@ export type VideoShape = TLBaseShape<
     h: number;
     prompt: string;
     model: string;
-    status: string; // submitting | generating | done | error
+    status: string; // config | submitting | generating | done | error
     taskId: string;
     videoUrl: string;
     progress: number;
     error: string;
+    firstImageUrl: string; // 首帧（config 态选择）
+    lastImageUrl: string; // 尾帧（可选）
+    resolution: string; // 480p / 720p / 1080p
+    duration: string; // 秒数 "3"~"10"
   }
 >;
