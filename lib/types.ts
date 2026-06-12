@@ -24,6 +24,7 @@ export type ImageShape = TLBaseShape<
     motion: string; // 图生视频的运动提示词
     videoResolution: string; // 480p / 720p / 1080p
     videoDuration: string; // 秒数，如 "5"
+    videoRatio: string; // adaptive / 16:9 / 9:16 / 1:1 / 4:3 / 3:4
     status: string; // generating | done | error
     imageUrl: string;
     error: string;
@@ -47,5 +48,6 @@ export type VideoShape = TLBaseShape<
     lastImageUrl: string; // 尾帧（可选）
     resolution: string; // 480p / 720p / 1080p
     duration: string; // 秒数 "3"~"10"
+    ratio: string; // adaptive / 16:9 / 9:16 / 1:1 / 4:3 / 3:4
   }
 >;
