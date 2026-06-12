@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId } from "tldraw";
+import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
-import { submitVideo } from "@/lib/maas";
+import { submitVideo, optimizePrompt } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
@@ -17,13 +17,52 @@ const DURATIONS = ["3", "4", "5", "6", "7", "8", "9", "10"].map((v) => ({
   v,
   label: `${v} 秒`,
 }));
+const RATIOS = [
+  { v: "adaptive", label: "自动比例" },
+  { v: "16:9", label: "16:9" },
+  { v: "9:16", label: "9:16" },
+  { v: "1:1", label: "1:1" },
+  { v: "4:3", label: "4:3" },
+  { v: "3:4", label: "3:4" },
+];
+
+// 旧画布数据升级：给已存在的图片卡补上 videoRatio 字段，避免清空画布
+const imageCardVersions = createShapePropsMigrationIds("image-card", { AddVideoRatio: 1 });
+const imageCardMigrations = createShapePropsMigrationSequence({
+  sequence: [
+    {
+      id: imageCardVersions.AddVideoRatio,
+      up(props: any) {
+        props.videoRatio = "adaptive";
+      },
+      down(props: any) {
+        delete props.videoRatio;
+      },
+    },
+  ],
+});
 
 function ImageCard({ shape }: { shape: ImageShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
+  const [optBusy, setOptBusy] = useState(false);
+
+  async function handleOptimize() {
+    const text = (motion || "").trim();
+    if (!text || optBusy) return;
+    setOptBusy(true);
+    try {
+      const better = await optimizePrompt(text, "video");
+      if (editor.getShape(shape.id)) update({ motion: better });
+    } catch (e: any) {
+      window.alert("优化失败：" + String(e?.message || e));
+    } finally {
+      setOptBusy(false);
+    }
+  }
   const {
     status, imageUrl, error, videoModel, motion, prompt,
-    videoResolution, videoDuration, w, h,
+    videoResolution, videoDuration, videoRatio, w, h,
   } = shape.props;
 
   function update(props: Partial<ImageShape["props"]>) {
@@ -53,6 +92,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
         model: videoModel,
         resolution: videoResolution,
         duration: videoDuration,
+        ratio: videoRatio,
       });
       if (editor.getShape(id)) {
         editor.updateShape({ id, type: "video-card", props: { status: "generating", taskId } });
@@ -152,6 +192,40 @@ function ImageCard({ shape }: { shape: ImageShape }) {
           <div style={{ display: "flex", gap: 8 }}>
             <select
               style={{ ...selectStyle, flex: 1 }}
+              value={videoRatio}
+              onPointerDown={(e) => e.stopPropagation()}
+              onChange={(e) => update({ videoRatio: e.target.value })}
+            >
+              {RATIOS.map((r) => (
+                <option key={r.v} value={r.v}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <button
+              style={{
+                height: 28,
+                padding: "0 10px",
+                borderRadius: 8,
+                border: "1px solid " + TOKENS.border,
+                background: "#fff",
+                color: "#475569",
+                fontSize: 11,
+                cursor: optBusy || !(motion || "").trim() ? "default" : "pointer",
+                opacity: optBusy || !(motion || "").trim() ? 0.5 : 1,
+                pointerEvents: "all",
+                flex: "0 0 auto",
+              }}
+              disabled={optBusy || !(motion || "").trim()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={handleOptimize}
+            >
+              {optBusy ? "优化中…" : "✨ 优化"}
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              style={{ ...selectStyle, flex: 1 }}
               value={videoResolution}
               onPointerDown={(e) => e.stopPropagation()}
               onChange={(e) => update({ videoResolution: e.target.value })}
@@ -214,21 +288,25 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<ImageShape> {
     motion: T.string,
     videoResolution: T.string,
     videoDuration: T.string,
+    videoRatio: T.string,
     status: T.string,
     imageUrl: T.string,
     error: T.string,
   };
 
+  static migrations = imageCardMigrations;
+
   getDefaultProps(): ImageShape["props"] {
     return {
       w: 320,
-      h: 520,
+      h: 556,
       prompt: "",
       model: "",
       videoModel: VIDEO_MODELS[0]?.id ?? "",
       motion: "",
       videoResolution: "720p",
       videoDuration: "5",
+      videoRatio: "adaptive",
       status: "generating",
       imageUrl: "",
       error: "",
