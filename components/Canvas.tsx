@@ -1,7 +1,16 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
-import { Tldraw, type Editor, type TLComponents, createShapeId } from "tldraw";
+import {
+  Tldraw,
+  DefaultToolbar,
+  TldrawUiMenuItem,
+  useIsToolSelected,
+  useTools,
+  type Editor,
+  type TLComponents,
+  createShapeId,
+} from "tldraw";
 import "tldraw/tldraw.css";
 import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
@@ -9,9 +18,24 @@ import { VideoShapeUtil } from "./shapes/VideoShape";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
 
-// 收掉右上角的官方主菜单/分享面板，让界面更干净（画布工具栏保留）
+// 底部工具栏只留「选择 + 抓手」两个工具，其余画笔/橡皮/文字等全部收掉
+function MinimalToolbar() {
+  const tools = useTools();
+  const isSelect = useIsToolSelected(tools["select"]);
+  const isHand = useIsToolSelected(tools["hand"]);
+  return (
+    <DefaultToolbar>
+      <TldrawUiMenuItem {...tools["select"]} isSelected={isSelect} />
+      <TldrawUiMenuItem {...tools["hand"]} isSelected={isHand} />
+    </DefaultToolbar>
+  );
+}
+
+// 收掉官方主菜单/分享面板/右侧样式面板，底部工具栏精简为两键
 const components: TLComponents = {
   MenuPanel: null,
+  StylePanel: null,
+  Toolbar: MinimalToolbar,
 };
 
 export default function Canvas() {
@@ -175,7 +199,7 @@ export default function Canvas() {
         </span>
         <div style={{ flex: 1 }} />
         <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
-          + 文本生成图片
+          + 文生图片
         </button>
         <button onClick={() => fileRef.current?.click()} disabled={!ready} style={barBtn("#10b981", ready)}>
           + 上传图片
