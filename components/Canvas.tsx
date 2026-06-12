@@ -71,6 +71,22 @@ export default function Canvas() {
     editor.select(id);
   }
 
+  // 「生成视频」：直接放一张配置态的视频卡（选首尾帧、清晰度、秒数、模型后生成）
+  function addVideoCard() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const c = centerPoint(editor);
+    const id = createShapeId();
+    editor.createShape({
+      id,
+      type: "video-card",
+      x: c.x - 170,
+      y: c.y - 310,
+      props: { w: 340, h: 620, status: "config" },
+    });
+    editor.select(id);
+  }
+
   // 上传图压缩：长边压到 1600px、转 JPEG。
   // 手机原图几 MB 的 base64 会压垮提交链路（Netlify 6MB 上限 + 网关拒收），
   // 压缩后一般只有 200~500KB，直传 base64 没问题（网关原样转发给火山引擎）。
@@ -164,6 +180,9 @@ export default function Canvas() {
         <button onClick={() => fileRef.current?.click()} disabled={!ready} style={barBtn("#10b981", ready)}>
           + 上传图片
         </button>
+        <button onClick={addVideoCard} disabled={!ready} style={barBtn("#8b5cf6", ready)}>
+          + 生成视频
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -175,7 +194,7 @@ export default function Canvas() {
 
       <div style={{ flex: 1, position: "relative" }}>
         <Tldraw
-          persistenceKey="ai-canvas-v1"
+          persistenceKey="ai-canvas-v2"
           shapeUtils={customShapeUtils}
           components={components}
           onMount={onMount}
