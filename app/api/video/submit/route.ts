@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
           prompt: promptText,
           duration: dur,
           seconds: String(dur),
+          // 双通道：①顶层 images 数组（网关旧版/魔改版能透传的扁平字段）
+          //        ②metadata.content 带 role（new-api 主线的标准通道，会整体替换 content）
+          // 任一通道生效图就能到上游；都被拦则需要零克云网关侧升级（见任务记录 scenario 判别法）
+          images: [imageUrl, lastImageUrl],
           metadata: {
             resolution: res,
             content: [
