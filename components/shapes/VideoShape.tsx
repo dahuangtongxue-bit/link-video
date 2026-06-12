@@ -185,6 +185,23 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     }
   }
 
+  // 出片后让整张卡贴合视频真实比例：横屏宽 520、竖屏宽 360，高度按宽高比折算，不留黑边
+  function fitToVideo(v: HTMLVideoElement) {
+    const vw = v.videoWidth;
+    const vh = v.videoHeight;
+    if (!vw || !vh) return;
+    const LABEL_H = 34; // 顶部标签条占高
+    const targetW = vw >= vh ? 520 : 360;
+    const targetH = Math.round((vh / vw) * targetW) + LABEL_H;
+    if (Math.abs(w - targetW) > 2 || Math.abs(h - targetH) > 2) {
+      editor.updateShape<VideoShape>({
+        id: shapeId,
+        type: "video-card",
+        props: { w: targetW, h: targetH },
+      });
+    }
+  }
+
   // 轮询：只要卡片处于「生成中」且有任务号，就保证有一个轮询循环在跑。
   // 首次挂载、刷新页面、画布滚回视野（组件重建）都会自动续上；组件卸载时停掉旧循环。
   useEffect(() => {
@@ -387,8 +404,15 @@ function VideoCard({ shape }: { shape: VideoShape }) {
               controls
               loop
               playsInline
-              style={{ width: "100%", height: "100%", objectFit: "contain", pointerEvents: "all" }}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+                pointerEvents: "all",
+              }}
               onPointerDown={(e) => e.stopPropagation()}
+              onLoadedMetadata={(e) => fitToVideo(e.currentTarget)}
             />
           )}
         </div>
