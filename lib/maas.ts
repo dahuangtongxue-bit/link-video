@@ -136,6 +136,7 @@ export async function submitVideo(input: {
   model: string;
   resolution?: string;
   duration?: string;
+  ratio?: string; // adaptive 时前端不传或传 adaptive，路由会忽略
 }): Promise<string> {
   const res = await fetchWithTimeout(
     "/api/video/submit",
