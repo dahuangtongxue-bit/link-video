@@ -106,7 +106,7 @@ export default function Canvas() {
       type: "video-card",
       x: c.x - 170,
       y: c.y - 310,
-      props: { w: 340, h: 620, status: "config" },
+      props: { w: 340, h: 656, status: "config" },
     });
     editor.select(id);
   }
