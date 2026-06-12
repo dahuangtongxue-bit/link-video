@@ -21,6 +21,8 @@ import {
   textAreaStyle,
 } from "./cardStyles";
 
+let spawnSeq = 0; // 并发生成时让新卡逐张错开摆放
+
 function PromptCard({ shape }: { shape: PromptShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
@@ -30,38 +32,42 @@ function PromptCard({ shape }: { shape: PromptShape }) {
     editor.updateShape<PromptShape>({ id: shape.id, type: "prompt-card", props });
   }
 
-  async function handleGenerate() {
+  function handleGenerate() {
     const text = prompt.trim();
     if (!text || busy) return;
+    // 只锁 2 秒防手抖双击；之后自动放开，可并发再生成（每张卡各自转圈、互不影响）
     setBusy(true);
+    window.setTimeout(() => setBusy(false), 2000);
 
+    spawnSeq += 1;
+    const off = (spawnSeq % 5) * 56; // 并发的新卡逐张错开，避免完全叠在一起
     const id = createShapeId();
     editor.createShape({
       id,
       type: "image-card",
-      x: shape.x + w + 80,
-      y: shape.y,
+      x: shape.x + w + 80 + off,
+      y: shape.y + off,
       props: { status: "generating", prompt: text, model: imageModel },
     });
     connectShapes(editor, shape.id, id);
     editor.select(id);
 
-    try {
-      const url = await generateImage(text, imageModel, size);
-      if (editor.getShape(id)) {
-        editor.updateShape({ id, type: "image-card", props: { status: "done", imageUrl: url } });
+    (async () => {
+      try {
+        const url = await generateImage(text, imageModel, size);
+        if (editor.getShape(id)) {
+          editor.updateShape({ id, type: "image-card", props: { status: "done", imageUrl: url } });
+        }
+      } catch (e: any) {
+        if (editor.getShape(id)) {
+          editor.updateShape({
+            id,
+            type: "image-card",
+            props: { status: "error", error: String(e?.message || e) },
+          });
+        }
       }
-    } catch (e: any) {
-      if (editor.getShape(id)) {
-        editor.updateShape({
-          id,
-          type: "image-card",
-          props: { status: "error", error: String(e?.message || e) },
-        });
-      }
-    } finally {
-      setBusy(false);
-    }
+    })();
   }
 
   return (
