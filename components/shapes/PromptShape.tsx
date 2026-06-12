@@ -10,7 +10,7 @@ import {
 } from "tldraw";
 import type { PromptShape } from "@/lib/types";
 import { IMAGE_MODELS, IMAGE_SIZES } from "@/lib/models";
-import { generateImage } from "@/lib/maas";
+import { generateImage, optimizePrompt } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import {
   TOKENS,
@@ -26,6 +26,21 @@ let spawnSeq = 0; // 并发生成时让新卡逐张错开摆放
 function PromptCard({ shape }: { shape: PromptShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
+  const [optBusy, setOptBusy] = useState(false);
+
+  async function handleOptimize() {
+    const text = prompt.trim();
+    if (!text || optBusy) return;
+    setOptBusy(true);
+    try {
+      const better = await optimizePrompt(text, "image");
+      if (editor.getShape(shape.id)) update({ prompt: better });
+    } catch (e: any) {
+      window.alert("优化失败：" + String(e?.message || e));
+    } finally {
+      setOptBusy(false);
+    }
+  }
   const { prompt, imageModel, size, w, h } = shape.props;
 
   function update(props: Partial<PromptShape["props"]>) {
@@ -81,6 +96,24 @@ function PromptCard({ shape }: { shape: PromptShape }) {
           onPointerDown={(e) => e.stopPropagation()}
           onChange={(e) => update({ prompt: e.target.value })}
         />
+        <button
+          style={{
+            height: 28,
+            borderRadius: 8,
+            border: "1px solid " + TOKENS.border,
+            background: "#fff",
+            color: "#475569",
+            fontSize: 11,
+            cursor: optBusy || !prompt.trim() ? "default" : "pointer",
+            opacity: optBusy || !prompt.trim() ? 0.5 : 1,
+            pointerEvents: "all",
+          }}
+          disabled={optBusy || !prompt.trim()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={handleOptimize}
+        >
+          {optBusy ? "优化中…" : "✨ 优化提示词"}
+        </button>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select
             style={{ ...selectStyle, flex: 1 }}
@@ -134,7 +167,7 @@ export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
   getDefaultProps(): PromptShape["props"] {
     return {
       w: 300,
-      h: 268,
+      h: 304,
       prompt: "",
       imageModel: IMAGE_MODELS[0]?.id ?? "",
       size: "2K",
