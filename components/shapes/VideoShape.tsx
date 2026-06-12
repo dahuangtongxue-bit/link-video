@@ -5,6 +5,7 @@ import { BaseBoxShapeUtil, HTMLContainer, T, useEditor } from "tldraw";
 import type { VideoShape } from "@/lib/types";
 import { pollVideoUntilDone, submitVideo } from "@/lib/maas";
 import { VIDEO_MODELS } from "@/lib/models";
+import { connectShapes } from "@/lib/connect";
 import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
@@ -152,6 +153,35 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  // ---- 首尾帧 ↔ 图片卡 的关系箭头 ----
+  // 找出「图片卡 srcId → 本视频卡」之间已有的箭头
+  function arrowsBetween(srcId: string): string[] {
+    const out: string[] = [];
+    const bindings = (editor.getBindingsToShape(shapeId, "arrow") as any[]) || [];
+    for (const b of bindings) {
+      const arrowId = b.fromId;
+      const ends = (editor.getBindingsFromShape(arrowId, "arrow") as any[]) || [];
+      if (ends.some((x: any) => x.toId === srcId)) out.push(arrowId);
+    }
+    return out;
+  }
+  function connectFrame(srcId: string) {
+    if (arrowsBetween(srcId).length === 0) {
+      connectShapes(editor, srcId as any, shapeId as any);
+    }
+  }
+  // 按图片地址拆箭头；若另一个槽位还在用同一张图则保留
+  function disconnectFrameByUrl(url: string, stillUsed: boolean) {
+    if (!url || stillUsed) return;
+    const candidates = editor
+      .getCurrentPageShapes()
+      .filter((sh: any) => sh.type === "image-card" && sh.props?.imageUrl === url);
+    for (const c of candidates) {
+      const ids = arrowsBetween(c.id as string);
+      if (ids.length) editor.deleteShapes(ids as any);
     }
   }
 
@@ -386,14 +416,20 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                 url={firstImageUrl}
                 active={picking === "first"}
                 onPick={() => setPicking(picking === "first" ? null : "first")}
-                onClear={() => update({ firstImageUrl: "" })}
+                onClear={() => {
+                  disconnectFrameByUrl(firstImageUrl, firstImageUrl === lastImageUrl);
+                  update({ firstImageUrl: "" });
+                }}
               />
               <FrameSlot
                 label="尾帧（可选）"
                 url={lastImageUrl}
                 active={picking === "last"}
                 onPick={() => setPicking(picking === "last" ? null : "last")}
-                onClear={() => update({ lastImageUrl: "" })}
+                onClear={() => {
+                  disconnectFrameByUrl(lastImageUrl, lastImageUrl === firstImageUrl);
+                  update({ lastImageUrl: "" });
+                }}
               />
             </div>
             {picking && (
@@ -423,11 +459,20 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                       alt=""
                       draggable={false}
                       onClick={() => {
-                        update(
-                          picking === "first"
-                            ? { firstImageUrl: img.url }
-                            : { lastImageUrl: img.url }
-                        );
+                        if (picking === "first") {
+                          disconnectFrameByUrl(
+                            firstImageUrl,
+                            firstImageUrl === lastImageUrl || firstImageUrl === img.url
+                          );
+                          update({ firstImageUrl: img.url });
+                        } else {
+                          disconnectFrameByUrl(
+                            lastImageUrl,
+                            lastImageUrl === firstImageUrl || lastImageUrl === img.url
+                          );
+                          update({ lastImageUrl: img.url });
+                        }
+                        connectFrame(img.id as string);
                         setPicking(null);
                       }}
                       style={{
