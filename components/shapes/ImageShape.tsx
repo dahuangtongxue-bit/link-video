@@ -6,17 +6,17 @@ import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
 import { submitVideo } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle } from "./cardStyles";
+import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
   { v: "480p", label: "480P" },
   { v: "720p", label: "720P" },
   { v: "1080p", label: "1080P" },
 ];
-const DURATIONS = [
-  { v: "5", label: "5 秒" },
-  { v: "10", label: "10 秒" },
-];
+const DURATIONS = ["3", "4", "5", "6", "7", "8", "9", "10"].map((v) => ({
+  v,
+  label: `${v} 秒`,
+}));
 
 function ImageCard({ shape }: { shape: ImageShape }) {
   const editor = useEditor();
@@ -142,11 +142,10 @@ function ImageCard({ shape }: { shape: ImageShape }) {
           }}
         >
           <span style={labelStyle}>图片 · 下一步生成视频</span>
-          <input
-            type="text"
-            placeholder="运动 / 镜头提示（可选）"
+          <textarea
+            placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
             value={motion}
-            style={{ ...selectStyle, width: "100%", boxSizing: "border-box", fontFamily: TOKENS.sans }}
+            style={{ ...textAreaStyle, minHeight: 92, flex: "0 0 auto" }}
             onPointerDown={(e) => e.stopPropagation()}
             onChange={(e) => update({ motion: e.target.value })}
           />
@@ -223,7 +222,7 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<ImageShape> {
   getDefaultProps(): ImageShape["props"] {
     return {
       w: 320,
-      h: 450,
+      h: 520,
       prompt: "",
       model: "",
       videoModel: VIDEO_MODELS[0]?.id ?? "",
