@@ -50,20 +50,48 @@ class TaskFailedError extends Error {} // 云端明确说任务失败
 class FatalPollError extends Error {} // 口令错误等，重试也没用
 
 // 文生图：一次返回图片地址
+// 文生图：走 Netlify 后台函数（15 分钟额度）+ 轮询取结果。
+// 原因：Seedream 5.0 在 2K/4K 档的生成时长远超普通函数 10~26 秒上限，同步等待必 504。
 export async function generateImage(prompt: string, model: string, size?: string): Promise<string> {
-  const res = await fetchWithTimeout(
-    "/api/image",
+  const jobId =
+    (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
+    `job_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+  // 1) 触发后台任务（-background 函数立即回 202，函数体继续在后台跑）
+  const kick = await fetchWithTimeout(
+    "/.netlify/functions/image-gen-background",
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ prompt, model, size }),
+      body: JSON.stringify({ jobId, prompt, model, size }),
     },
-    120000
+    20000
   );
-  if (!res.ok) throw new Error(await readError(res));
-  const data = await res.json();
-  if (!data.imageUrl) throw new Error("未拿到图片地址");
-  return data.imageUrl as string;
+  if (!(kick.ok || kick.status === 202)) throw new Error(await readError(kick));
+
+  // 2) 轮询结果：每 3 秒一次，最多约 6 分钟；单次网络失败不致命，口令错快速失败
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 120; i++) {
+    await wait(3000);
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(
+        `/.netlify/functions/image-result?jobId=${encodeURIComponent(jobId)}`,
+        { headers: { ...authHeaders() } },
+        15000
+      );
+    } catch {
+      continue; // 单次查询超时/断网：下一轮再试
+    }
+    if (res.status === 401) throw new FatalPollError("访问口令错误");
+    if (!res.ok) continue;
+    const d: any = await res.json().catch(() => null);
+    if (!d) continue;
+    if (d.status === "done" && d.imageUrl) return d.imageUrl as string;
+    if (d.status === "error") throw new Error(d.error || "生成失败");
+    // running / pending → 继续等
+  }
+  throw new Error("生成超时（约 6 分钟）：5.0 大图偏慢，可稍后重试或换 2K");
 }
 
 // 图生视频：提交任务，拿 taskId（提交是秒回的异步任务）
