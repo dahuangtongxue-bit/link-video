@@ -14,9 +14,8 @@ export const IMAGE_MODELS: ModelOption[] = [
   { id: "doubao-seedream-4-0-250828", label: "豆包图像 · Seedream 4.0" },
 ];
 
-// 文生图分辨率档位（具体哪档可用以平台支持为准；不支持时错误会显示在卡片上）
+// 文生图分辨率档位。豆包全系下限 3686400 像素（2560x1440），1K 不够格，直接不提供。
 export const IMAGE_SIZES: ModelOption[] = [
-  { id: "1K", label: "1K" },
   { id: "2K", label: "2K" },
   { id: "4K", label: "4K" },
 ];
