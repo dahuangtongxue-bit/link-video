@@ -112,6 +112,23 @@ export async function generateImage(prompt: string, model: string, size?: string
 }
 
 // 图生视频：提交任务，拿 taskId（提交是秒回的异步任务）
+// 提示词优化：服务端 /api/optimize 持有密钥与系统提示词，kind 区分文生图/视频运动两套写法
+export async function optimizePrompt(prompt: string, kind: "image" | "video"): Promise<string> {
+  const res = await fetchWithTimeout(
+    "/api/optimize",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ prompt, kind }),
+    },
+    60000
+  );
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json();
+  if (!data.prompt) throw new Error("未拿到优化结果");
+  return data.prompt as string;
+}
+
 export async function submitVideo(input: {
   imageUrl: string;
   lastImageUrl?: string; // 尾帧（可选，首尾帧模式）
