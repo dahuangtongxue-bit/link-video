@@ -24,7 +24,7 @@ export default async (req) => {
   if (PASS && accessKey !== PASS) return new Response("unauthorized", { status: 401 });
   if (!jobId || !prompt) return new Response("missing jobId/prompt", { status: 400 });
 
-  const store = getStore(STORE);
+  const store = getStore({ name: STORE, consistency: "strong" }); // 强一致：写完立刻读得到
   const write = (obj) => store.setJSON(String(jobId), { ...obj, at: Date.now() });
 
   await write({ status: "running" });
