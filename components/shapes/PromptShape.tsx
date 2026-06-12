@@ -9,7 +9,7 @@ import {
   createShapeId,
 } from "tldraw";
 import type { PromptShape } from "@/lib/types";
-import { IMAGE_MODELS } from "@/lib/models";
+import { IMAGE_MODELS, IMAGE_SIZES } from "@/lib/models";
 import { generateImage } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import {
@@ -24,7 +24,7 @@ import {
 function PromptCard({ shape }: { shape: PromptShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
-  const { prompt, imageModel, w, h } = shape.props;
+  const { prompt, imageModel, size, w, h } = shape.props;
 
   function update(props: Partial<PromptShape["props"]>) {
     editor.updateShape<PromptShape>({ id: shape.id, type: "prompt-card", props });
@@ -47,7 +47,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
     editor.select(id);
 
     try {
-      const url = await generateImage(text, imageModel);
+      const url = await generateImage(text, imageModel, size);
       if (editor.getShape(id)) {
         editor.updateShape({ id, type: "image-card", props: { status: "done", imageUrl: url } });
       }
@@ -88,15 +88,28 @@ function PromptCard({ shape }: { shape: PromptShape }) {
               </option>
             ))}
           </select>
-          <button
-            style={primaryBtn(TOKENS.prompt, busy || !prompt.trim())}
-            disabled={busy || !prompt.trim()}
+          <select
+            style={{ ...selectStyle, width: 72 }}
+            title="生成分辨率（以平台支持为准）"
+            value={size}
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={handleGenerate}
+            onChange={(e) => update({ size: e.target.value })}
           >
-            {busy ? "生成中…" : "生成图片"}
-          </button>
+            {IMAGE_SIZES.map((sz) => (
+              <option key={sz.id} value={sz.id}>
+                {sz.label}
+              </option>
+            ))}
+          </select>
         </div>
+        <button
+          style={{ ...primaryBtn(TOKENS.prompt, busy || !prompt.trim()), width: "100%" }}
+          disabled={busy || !prompt.trim()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={handleGenerate}
+        >
+          {busy ? "生成中…" : "生成图片"}
+        </button>
       </div>
     </HTMLContainer>
   );
@@ -109,14 +122,16 @@ export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
     h: T.number,
     prompt: T.string,
     imageModel: T.string,
+    size: T.string,
   };
 
   getDefaultProps(): PromptShape["props"] {
     return {
       w: 300,
-      h: 230,
+      h: 268,
       prompt: "",
       imageModel: IMAGE_MODELS[0]?.id ?? "",
+      size: "2K",
     };
   }
 
