@@ -69,29 +69,46 @@ export async function generateImage(prompt: string, model: string, size?: string
   );
   if (!(kick.ok || kick.status === 202)) throw new Error(await readError(kick));
 
-  // 2) 轮询结果：每 3 秒一次，最多约 6 分钟；单次网络失败不致命，口令错快速失败
+  // 2) 轮询结果：每 3 秒一次，最多约 6 分钟；单次网络失败不致命，口令错快速失败。
+  //    任何非 200 都记下来，超时报错时点名原因（避免 404 之类被无声吞掉）。
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let lastBad = "";
   for (let i = 0; i < 120; i++) {
     await wait(3000);
     let res: Response;
     try {
       res = await fetchWithTimeout(
-        `/.netlify/functions/image-result?jobId=${encodeURIComponent(jobId)}`,
-        { headers: { ...authHeaders() } },
+        `/.netlify/functions/image-result?jobId=${encodeURIComponent(jobId)}&t=${Date.now()}`,
+        { headers: { ...authHeaders() }, cache: "no-store" },
         15000
       );
     } catch {
-      continue; // 单次查询超时/断网：下一轮再试
+      lastBad = "查询请求超时/断网";
+      continue; // 单次失败：下一轮再试
     }
     if (res.status === 401) throw new FatalPollError("访问口令错误");
-    if (!res.ok) continue;
+    if (res.status === 404) {
+      lastBad = "404：image-result 函数不存在（未部署或文件名不对）";
+      continue;
+    }
+    if (!res.ok) {
+      lastBad = `查询接口 HTTP ${res.status}`;
+      continue;
+    }
     const d: any = await res.json().catch(() => null);
-    if (!d) continue;
+    if (!d) {
+      lastBad = "查询接口返回非 JSON";
+      continue;
+    }
     if (d.status === "done" && d.imageUrl) return d.imageUrl as string;
     if (d.status === "error") throw new Error(d.error || "生成失败");
     // running / pending → 继续等
   }
-  throw new Error("生成超时（约 6 分钟）：5.0 大图偏慢，可稍后重试或换 2K");
+  throw new Error(
+    lastBad
+      ? `取结果失败（${lastBad}）。注意：图可能已在平台生成并计费，先修查询通道再重试`
+      : "生成超时（约 6 分钟）：5.0 大图偏慢，可稍后重试或换 2K"
+  );
 }
 
 // 图生视频：提交任务，拿 taskId（提交是秒回的异步任务）
