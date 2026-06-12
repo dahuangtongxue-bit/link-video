@@ -50,13 +50,13 @@ class TaskFailedError extends Error {} // 云端明确说任务失败
 class FatalPollError extends Error {} // 口令错误等，重试也没用
 
 // 文生图：一次返回图片地址
-export async function generateImage(prompt: string, model: string): Promise<string> {
+export async function generateImage(prompt: string, model: string, size?: string): Promise<string> {
   const res = await fetchWithTimeout(
     "/api/image",
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ prompt, model }),
+      body: JSON.stringify({ prompt, model, size }),
     },
     120000
   );
@@ -69,6 +69,7 @@ export async function generateImage(prompt: string, model: string): Promise<stri
 // 图生视频：提交任务，拿 taskId（提交是秒回的异步任务）
 export async function submitVideo(input: {
   imageUrl: string;
+  lastImageUrl?: string; // 尾帧（可选，首尾帧模式）
   prompt: string;
   model: string;
   resolution?: string;
