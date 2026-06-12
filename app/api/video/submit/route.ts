@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { imageUrl, lastImageUrl, prompt, model, resolution, duration } = await req
+  const { imageUrl, lastImageUrl, prompt, model, resolution, duration, ratio } = await req
     .json()
     .catch(() => ({} as any));
   if (!imageUrl) return NextResponse.json({ error: "缺少 imageUrl" }, { status: 400 });
@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
   }
 
   const dur = Math.min(10, Math.max(3, Number(duration) || 5)); // 3~10 秒
+    // 比例：adaptive（自动跟随首帧）时不传，让上游按输入图自适应；其余原样透传
+    const ratioVal = typeof ratio === "string" && ratio && ratio !== "adaptive" ? ratio : "";
   const res = (resolution || "720p").toString().toLowerCase(); // 480p / 720p / 1080p
 
   // ---------- MOCK ----------
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
           images: [imageUrl, lastImageUrl],
           metadata: {
             resolution: res,
+            ...(ratioVal ? { ratio: ratioVal } : {}),
             content: [
               { type: "image_url", image_url: { url: imageUrl }, role: "first_frame" },
               { type: "image_url", image_url: { url: lastImageUrl }, role: "last_frame" },
@@ -71,7 +74,7 @@ export async function POST(req: NextRequest) {
           image: imageUrl,
           duration: dur,
           seconds: String(dur),
-          metadata: { resolution: res }, // 供应商自定义参数；不支持会被忽略，不影响提交
+          metadata: { resolution: res, ...(ratioVal ? { ratio: ratioVal } : {}) }, // 供应商自定义参数；不支持会被忽略
         };
 
     const r = await fetch(url, {
