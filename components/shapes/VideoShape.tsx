@@ -196,7 +196,11 @@ function VideoCard({ shape }: { shape: VideoShape }) {
         .getCurrentPageShapes()
         .filter(
           (sh: any) =>
-            sh.type === "image-card" && sh.props?.status === "done" && sh.props?.imageUrl
+            sh.type === "image-card" &&
+            sh.props?.status === "done" &&
+            sh.props?.imageUrl &&
+            // 参考图只能用有公网地址的图（生成图 http://），上传图(data:)平台不认，过滤掉
+            (picking !== "ref" || String(sh.props.imageUrl).startsWith("http"))
         )
         .map((sh: any) => ({ id: sh.id as string, url: sh.props.imageUrl as string }))
     : [];
@@ -752,7 +756,9 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                   )
                 ) : canvasImages.length === 0 ? (
                   <span style={{ fontSize: 11, color: "#94a3b8", padding: "16px 8px" }}>
-                    画布上还没有可用图片——先用「文生图」或「上传图片」弄一张
+                    {picking === "ref"
+                      ? "参考图只能用「文生图」生成的图（有公网链接）——上传的图平台暂不识别"
+                      : "画布上还没有可用图片——先用「文生图」或「上传图片」弄一张"}
                   </span>
                 ) : (
                   canvasImages.map((img) => (
