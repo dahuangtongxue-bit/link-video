@@ -46,6 +46,8 @@ export type VideoShape = TLBaseShape<
     error: string;
     firstImageUrl: string; // 首帧（config 态选择）
     lastImageUrl: string; // 尾帧（可选）
+    referenceImageUrl: string; // 参考图（角色/物体/场景一致性，真人照片）
+    sourceVideoUrl: string; // 源视频（延续 / 编辑）
     resolution: string; // 480p / 720p / 1080p
     duration: string; // 秒数 "3"~"10"
     ratio: string; // adaptive / 16:9 / 9:16 / 1:1 / 4:3 / 3:4
