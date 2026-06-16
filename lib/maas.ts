@@ -130,8 +130,11 @@ export async function optimizePrompt(prompt: string, kind: "image" | "video"): P
 }
 
 export async function submitVideo(input: {
-  imageUrl: string;
+  imageUrl?: string; // 首帧（兼容旧字段名）
+  firstImageUrl?: string; // 首帧
   lastImageUrl?: string; // 尾帧（可选，首尾帧模式）
+  referenceImageUrl?: string; // 参考图（角色/物体/场景一致性，真人照片）
+  sourceVideoUrl?: string; // 源视频（延续 / 编辑）
   prompt: string;
   model: string;
   resolution?: string;
