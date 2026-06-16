@@ -4,17 +4,51 @@ import { checkAuth, videoIsMock, VIDEO_API_KEY, VIDEO_BASE_URL } from "@/lib/ser
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const TOO_BIG = 4_000_000; // base64 data URL 上限，超了请求链路会崩
+
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { imageUrl, lastImageUrl, prompt, model, resolution, duration, ratio } = await req
-    .json()
-    .catch(() => ({} as any));
-  if (!imageUrl) return NextResponse.json({ error: "缺少 imageUrl" }, { status: 400 });
+  const {
+    // 兼容旧字段名 imageUrl == 首帧
+    imageUrl,
+    firstImageUrl,
+    lastImageUrl,
+    referenceImageUrl, // 参考图（角色/物体/场景一致性，真人照片走这里）
+    sourceVideoUrl, // 源视频（延续 / 编辑）
+    prompt,
+    model,
+    resolution,
+    duration,
+    ratio,
+  } = await req.json().catch(() => ({} as any));
 
-  // 超大 base64 防线：旧版上传的未压缩原图会压垮请求链路，明确拒绝并给出指引
-  for (const u of [imageUrl, lastImageUrl]) {
-    if (typeof u === "string" && u.startsWith("data:") && u.length > 4_000_000) {
+  const firstUrl = firstImageUrl || imageUrl || "";
+  const lastUrl = lastImageUrl || "";
+  const refImg = referenceImageUrl || "";
+  const srcVideo = sourceVideoUrl || "";
+
+  // 至少要有一个媒体输入（纯文生视频本工具不走这条提交，画布上没有入口）
+  if (!firstUrl && !refImg && !srcVideo) {
+    return NextResponse.json({ error: "缺少图片或视频输入" }, { status: 400 });
+  }
+
+  // ---- 混用规则校验（违反上游会 400，这里提前拦下，省一次烧钱）----
+  // 规则1：reference_image 不能与 first_frame / last_frame 同时出现
+  if (refImg && (firstUrl || lastUrl)) {
+    return NextResponse.json(
+      { error: "参考图不能与首帧/尾帧同时使用。要么用参考图（角色一致性），要么用首尾帧（指定起止画面）" },
+      { status: 400 }
+    );
+  }
+  // 规则2：尾帧必须配首帧
+  if (lastUrl && !firstUrl) {
+    return NextResponse.json({ error: "设置尾帧前必须先设置首帧" }, { status: 400 });
+  }
+
+  // ---- 超大 base64 防线 ----
+  for (const u of [firstUrl, lastUrl, refImg]) {
+    if (typeof u === "string" && u.startsWith("data:") && u.length > TOO_BIG) {
       return NextResponse.json(
         { error: "上传图过大。请删除该图片卡后重新上传（新版上传会自动压缩）" },
         { status: 400 }
@@ -23,9 +57,10 @@ export async function POST(req: NextRequest) {
   }
 
   const dur = Math.min(10, Math.max(3, Number(duration) || 5)); // 3~10 秒
-    // 比例：adaptive（自动跟随首帧）时不传，让上游按输入图自适应；其余原样透传
-    const ratioVal = typeof ratio === "string" && ratio && ratio !== "adaptive" ? ratio : "";
-  const res = (resolution || "720p").toString().toLowerCase(); // 480p / 720p / 1080p
+  const ratioVal = typeof ratio === "string" && ratio && ratio !== "adaptive" ? ratio : "";
+  const res = (resolution || "720p").toString().toLowerCase();
+  const promptText =
+    prompt && prompt.trim() ? prompt.trim() : "让画面自然地动起来，保持主体稳定、镜头平滑";
 
   // ---------- MOCK ----------
   if (videoIsMock) {
@@ -33,49 +68,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ taskId: `mock_${readyAt}` });
   }
 
-  // ===================================================================
-  // 创建任务：POST {BASE}/v1/video/generations
-  // New API 视频用「扁平字段」（不是火山 content 数组）：
-  //   model(必填) / prompt(必填) / image(图URL) / duration(秒) / metadata(供应商自定义)
-  // 成功返回 201 + { task_id, status:"processing" } —— 查询要用 task_id。
-  // ===================================================================
   try {
     const url = `${VIDEO_BASE_URL}/v1/video/generations`;
-    const promptText =
-      prompt && prompt.trim() ? prompt.trim() : "让画面自然地动起来，保持主体稳定、镜头平滑";
 
-    // 两种模式（已对照 new-api 源码核实）：
-    // ① 单图（首帧）：扁平 image 字段 —— 适配器转成 content 里的 image_url 条目（已验证可用）
-    // ② 首尾帧：metadata.content 带 role 标记 —— UnmarshalMetadata 把 metadata 整体 JSON
-    //    直灌进上游载荷（只挡 model 字段），role: first_frame / last_frame 原样到火山引擎
-    // duration 双保险：适配器实际读 seconds(字符串) 换算时长，duration 数字也一并带上
-    const body: any = lastImageUrl
-      ? {
-          model,
-          prompt: promptText,
-          duration: dur,
-          seconds: String(dur),
-          // 双通道：①顶层 images 数组（网关旧版/魔改版能透传的扁平字段）
-          //        ②metadata.content 带 role（new-api 主线的标准通道，会整体替换 content）
-          // 任一通道生效图就能到上游；都被拦则需要零克云网关侧升级（见任务记录 scenario 判别法）
-          images: [imageUrl, lastImageUrl],
-          metadata: {
-            resolution: res,
-            ...(ratioVal ? { ratio: ratioVal } : {}),
-            content: [
-              { type: "image_url", image_url: { url: imageUrl }, role: "first_frame" },
-              { type: "image_url", image_url: { url: lastImageUrl }, role: "last_frame" },
-            ],
-          },
-        }
-      : {
-          model,
-          prompt: promptText,
-          image: imageUrl,
-          duration: dur,
-          seconds: String(dur),
-          metadata: { resolution: res, ...(ratioVal ? { ratio: ratioVal } : {}) }, // 供应商自定义参数；不支持会被忽略
-        };
+    // ===== 组装 content 数组（已对照零克云文档 4.1.3 / 4.1.4 + new-api 源码核实）=====
+    // 文档 role 取值：first_frame / last_frame / reference_image / reference_video / reference_audio
+    // 经 metadata.content 通道直灌上游（resolution/ratio 同通道，已验证零克云能透传）
+    const content: any[] = [];
+    if (srcVideo) {
+      // 视频延续 / 编辑：源视频
+      content.push({ type: "video_url", video_url: { url: srcVideo }, role: "reference_video" });
+    }
+    if (refImg) {
+      // 参考图：角色/物体/场景一致性
+      content.push({ type: "image_url", image_url: { url: refImg }, role: "reference_image" });
+    }
+    if (firstUrl) {
+      content.push({ type: "image_url", image_url: { url: firstUrl }, role: "first_frame" });
+    }
+    if (lastUrl) {
+      content.push({ type: "image_url", image_url: { url: lastUrl }, role: "last_frame" });
+    }
+
+    const metadata: any = { resolution: res, content };
+    if (ratioVal) metadata.ratio = ratioVal;
+
+    const body: any = {
+      model,
+      prompt: promptText,
+      duration: dur,
+      seconds: String(dur), // 适配器实际读 seconds 换算时长，双保险
+      metadata,
+    };
+
+    // 单首帧这一最常见、已验证的路径，额外保留扁平 image 字段做冗余（双通道，任一生效即可）
+    if (firstUrl && !lastUrl && !refImg && !srcVideo) {
+      body.image = firstUrl;
+    }
 
     const r = await fetch(url, {
       method: "POST",
@@ -98,7 +127,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 关键：查询用 task_id，不是 id
     const taskId: string | undefined =
       data?.task_id || data?.data?.task_id || data?.id || data?.data?.id;
     if (!taskId) {
