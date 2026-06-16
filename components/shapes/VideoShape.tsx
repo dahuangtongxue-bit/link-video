@@ -27,7 +27,10 @@ const RATIOS = [
 ];
 
 // 旧画布数据升级：给已存在的视频卡补上 ratio 字段，避免清空画布
-const videoCardVersions = createShapePropsMigrationIds("video-card", { AddRatio: 1 });
+const videoCardVersions = createShapePropsMigrationIds("video-card", {
+  AddRatio: 1,
+  AddRefAndSrcVideo: 2,
+});
 const videoCardMigrations = createShapePropsMigrationSequence({
   sequence: [
     {
@@ -37,6 +40,18 @@ const videoCardMigrations = createShapePropsMigrationSequence({
       },
       down(props: any) {
         delete props.ratio;
+      },
+    },
+    {
+      // 给旧视频卡补上参考图 / 源视频字段，避免清空画布
+      id: videoCardVersions.AddRefAndSrcVideo,
+      up(props: any) {
+        props.referenceImageUrl = "";
+        props.sourceVideoUrl = "";
+      },
+      down(props: any) {
+        delete props.referenceImageUrl;
+        delete props.sourceVideoUrl;
       },
     },
   ],
@@ -123,7 +138,8 @@ function VideoCard({ shape }: { shape: VideoShape }) {
   const editor = useEditor();
   const {
     status, taskId, videoUrl, progress, error, model, w, h,
-    prompt, firstImageUrl, lastImageUrl, resolution, duration, ratio,
+    prompt, firstImageUrl, lastImageUrl, referenceImageUrl, sourceVideoUrl,
+    resolution, duration, ratio,
   } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState(false);
@@ -142,14 +158,30 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       setOptBusy(false);
     }
   }
-  const [picking, setPicking] = useState<null | "first" | "last">(null);
+  const [picking, setPicking] = useState<null | "first" | "last" | "ref" | "srcvideo">(null);
+  // 当前编辑模式：frames(首尾帧) / ref(参考图) / srcvideo(源视频续编)。
+  // 初值按已有数据推断，之后用户可手动切；切换时清掉其它模式的输入，保证互斥
+  const [mode, setMode] = useState<"frames" | "ref" | "srcvideo">(
+    sourceVideoUrl ? "srcvideo" : referenceImageUrl ? "ref" : "frames"
+  );
+
+  function switchMode(next: "frames" | "ref" | "srcvideo") {
+    if (next === mode) return;
+    setPicking(null);
+    // 清掉非当前模式的输入（含拆掉首尾帧箭头），避免违反混用规则
+    if (firstImageUrl) disconnectFrameByUrl(firstImageUrl, firstImageUrl === lastImageUrl);
+    if (lastImageUrl) disconnectFrameByUrl(lastImageUrl, lastImageUrl === firstImageUrl);
+    update({ firstImageUrl: "", lastImageUrl: "", referenceImageUrl: "", sourceVideoUrl: "" });
+    setMode(next);
+  }
 
   function update(props: Partial<VideoShape["props"]>) {
     editor.updateShape<VideoShape>({ id: shapeId, type: "video-card", props });
   }
 
-  // 选帧时扫一遍画布上所有可用的图片卡（已出图的）
-  const canvasImages = picking
+  // 选图槽（首/尾/参考）扫画布上已出图的图片卡；选源视频槽扫已出片的视频卡
+  const pickingImage = picking === "first" || picking === "last" || picking === "ref";
+  const canvasImages = pickingImage
     ? editor
         .getCurrentPageShapes()
         .filter(
@@ -158,17 +190,35 @@ function VideoCard({ shape }: { shape: VideoShape }) {
         )
         .map((sh: any) => ({ id: sh.id as string, url: sh.props.imageUrl as string }))
     : [];
+  const canvasVideos =
+    picking === "srcvideo"
+      ? editor
+          .getCurrentPageShapes()
+          .filter(
+            (sh: any) =>
+              sh.type === "video-card" &&
+              sh.props?.status === "done" &&
+              sh.props?.videoUrl &&
+              sh.id !== shapeId
+          )
+          .map((sh: any) => ({ id: sh.id as string, url: sh.props.videoUrl as string }))
+      : [];
 
   // config 态点「生成视频」：提交后状态机和图生视频完全同一条管线（轮询防御全部复用）
+  // 当前处于哪种模式：源视频 > 参考图 > 首尾帧（互斥，UI 也会互斥）
+  const hasInput = !!(firstImageUrl || referenceImageUrl || sourceVideoUrl);
+
   async function startGenerate() {
-    if (busy || !firstImageUrl) return;
+    if (busy || !hasInput) return;
     setBusy(true);
     setPicking(null);
     update({ status: "submitting", error: "" });
     try {
       const newTaskId = await submitVideo({
-        imageUrl: firstImageUrl,
+        firstImageUrl: firstImageUrl || undefined,
         lastImageUrl: lastImageUrl || undefined,
+        referenceImageUrl: referenceImageUrl || undefined,
+        sourceVideoUrl: sourceVideoUrl || undefined,
         prompt: (prompt || "").trim() || "让画面自然地动起来，保持主体稳定、镜头平滑",
         model,
         resolution,
@@ -508,28 +558,136 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                 {optBusy ? "优化中…" : "✨ 优化"}
               </button>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <FrameSlot
-                label="首帧（必选）"
-                url={firstImageUrl}
-                active={picking === "first"}
-                onPick={() => setPicking(picking === "first" ? null : "first")}
-                onClear={() => {
-                  disconnectFrameByUrl(firstImageUrl, firstImageUrl === lastImageUrl);
-                  update({ firstImageUrl: "" });
-                }}
-              />
-              <FrameSlot
-                label="尾帧（可选）"
-                url={lastImageUrl}
-                active={picking === "last"}
-                onPick={() => setPicking(picking === "last" ? null : "last")}
-                onClear={() => {
-                  disconnectFrameByUrl(lastImageUrl, lastImageUrl === firstImageUrl);
-                  update({ lastImageUrl: "" });
-                }}
-              />
+            {/* 模式切换 */}
+            <div style={{ display: "flex", gap: 6 }}>
+              {([
+                ["frames", "首尾帧"],
+                ["ref", "参考图"],
+                ["srcvideo", "续/编辑"],
+              ] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => switchMode(m)}
+                  style={{
+                    flex: 1,
+                    height: 28,
+                    borderRadius: 8,
+                    border: `1px solid ${mode === m ? TOKENS.video : TOKENS.border}`,
+                    background: mode === m ? TOKENS.video : "#fff",
+                    color: mode === m ? "#fff" : "#475569",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    pointerEvents: "all",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+
+            {/* 首尾帧模式 */}
+            {mode === "frames" && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <FrameSlot
+                  label="首帧（必选）"
+                  url={firstImageUrl}
+                  active={picking === "first"}
+                  onPick={() => setPicking(picking === "first" ? null : "first")}
+                  onClear={() => {
+                    disconnectFrameByUrl(firstImageUrl, firstImageUrl === lastImageUrl);
+                    update({ firstImageUrl: "" });
+                  }}
+                />
+                <FrameSlot
+                  label="尾帧（可选）"
+                  url={lastImageUrl}
+                  active={picking === "last"}
+                  onPick={() => setPicking(picking === "last" ? null : "last")}
+                  onClear={() => {
+                    disconnectFrameByUrl(lastImageUrl, lastImageUrl === firstImageUrl);
+                    update({ lastImageUrl: "" });
+                  }}
+                />
+              </div>
+            )}
+
+            {/* 参考图模式：真人照片 / 角色一致性 */}
+            {mode === "ref" && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <FrameSlot
+                  label="参考图（角色/物体一致性）"
+                  url={referenceImageUrl}
+                  active={picking === "ref"}
+                  onPick={() => setPicking(picking === "ref" ? null : "ref")}
+                  onClear={() => update({ referenceImageUrl: "" })}
+                />
+              </div>
+            )}
+
+            {/* 源视频模式：延续 / 编辑画布上已生成的视频 */}
+            {mode === "srcvideo" && (
+              <div>
+                <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>
+                  源视频（从画布上已生成的视频里选）
+                </div>
+                <div
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => setPicking(picking === "srcvideo" ? null : "srcvideo")}
+                  style={{
+                    height: 56,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    border: `2px ${picking === "srcvideo" ? "solid" : "dashed"} ${
+                      picking === "srcvideo" ? TOKENS.video : "#cbd5e1"
+                    }`,
+                    background: "#f8fafc",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    position: "relative",
+                    pointerEvents: "all",
+                  }}
+                >
+                  {sourceVideoUrl ? (
+                    <>
+                      <video
+                        src={sourceVideoUrl}
+                        muted
+                        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 6 }}
+                      />
+                      <button
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          update({ sourceVideoUrl: "" });
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: 2,
+                          right: 2,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 9,
+                          border: "none",
+                          background: "rgba(15,17,21,0.75)",
+                          color: "#fff",
+                          fontSize: 11,
+                          lineHeight: "18px",
+                          padding: 0,
+                          cursor: "pointer",
+                          pointerEvents: "all",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>点击选择源视频</span>
+                  )}
+                </div>
+              </div>
+            )}
             {picking && (
               <div
                 onPointerDown={(e) => e.stopPropagation()}
@@ -544,7 +702,36 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                   pointerEvents: "all",
                 }}
               >
-                {canvasImages.length === 0 ? (
+                {picking === "srcvideo" ? (
+                  canvasVideos.length === 0 ? (
+                    <span style={{ fontSize: 11, color: "#94a3b8", padding: "16px 8px" }}>
+                      画布上还没有已生成的视频——先用首尾帧或图生视频做一个
+                    </span>
+                  ) : (
+                    canvasVideos.map((v) => (
+                      <video
+                        key={v.id}
+                        src={v.url}
+                        muted
+                        onClick={() => {
+                          update({ sourceVideoUrl: v.url });
+                          connectFrame(v.id as string);
+                          setPicking(null);
+                        }}
+                        style={{
+                          width: 64,
+                          height: 48,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          flex: "0 0 auto",
+                          border: `1px solid ${TOKENS.border}`,
+                          pointerEvents: "all",
+                        }}
+                      />
+                    ))
+                  )
+                ) : canvasImages.length === 0 ? (
                   <span style={{ fontSize: 11, color: "#94a3b8", padding: "16px 8px" }}>
                     画布上还没有可用图片——先用「文生图」或「上传图片」弄一张
                   </span>
@@ -563,14 +750,18 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                             firstImageUrl === lastImageUrl || firstImageUrl === img.url
                           );
                           update({ firstImageUrl: img.url });
-                        } else {
+                          connectFrame(img.id as string);
+                        } else if (picking === "last") {
                           disconnectFrameByUrl(
                             lastImageUrl,
                             lastImageUrl === firstImageUrl || lastImageUrl === img.url
                           );
                           update({ lastImageUrl: img.url });
+                          connectFrame(img.id as string);
+                        } else if (picking === "ref") {
+                          update({ referenceImageUrl: img.url });
+                          connectFrame(img.id as string);
                         }
-                        connectFrame(img.id as string);
                         setPicking(null);
                       }}
                       style={{
@@ -627,9 +818,9 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                 ))}
               </select>
               <button
-                style={primaryBtn(TOKENS.video, busy || !firstImageUrl)}
-                disabled={busy || !firstImageUrl}
-                title={!firstImageUrl ? "先选择首帧图片" : ""}
+                style={primaryBtn(TOKENS.video, busy || !hasInput)}
+                disabled={busy || !hasInput}
+                title={!hasInput ? "先选择图片或源视频" : ""}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={startGenerate}
               >
@@ -662,6 +853,8 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
     error: T.string,
     firstImageUrl: T.string,
     lastImageUrl: T.string,
+    referenceImageUrl: T.string,
+    sourceVideoUrl: T.string,
     resolution: T.string,
     duration: T.string,
     ratio: T.string,
@@ -682,6 +875,8 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
       error: "",
       firstImageUrl: "",
       lastImageUrl: "",
+      referenceImageUrl: "",
+      sourceVideoUrl: "",
       resolution: "720p",
       duration: "5",
       ratio: "adaptive",
