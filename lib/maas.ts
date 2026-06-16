@@ -148,7 +148,7 @@ export async function submitVideo(input: {
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(input),
     },
-    30000
+    120000
   );
   if (!res.ok) throw new Error(await readError(res));
   const data = await res.json();
