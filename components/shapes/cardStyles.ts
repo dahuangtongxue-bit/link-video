@@ -66,6 +66,23 @@ export function primaryBtn(accent: string, disabled = false): CSSProperties {
   };
 }
 
+// 卡片名称输入框：低调、像标题不像表单，聚焦时才显边框
+export const nameInputStyle: CSSProperties = {
+  pointerEvents: "all",
+  border: "1px solid transparent",
+  borderRadius: 6,
+  padding: "2px 6px",
+  marginLeft: 8,
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: TOKENS.sans,
+  color: TOKENS.ink,
+  background: "transparent",
+  outline: "none",
+  flex: 1,
+  minWidth: 0,
+};
+
 export const selectStyle: CSSProperties = {
   pointerEvents: "all",
   appearance: "none",
