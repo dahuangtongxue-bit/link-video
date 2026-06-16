@@ -6,7 +6,7 @@ import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
 import { submitVideo, optimizePrompt } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
+import { TOKENS, cardShell, labelStyle, nameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
   { v: "480p", label: "480P" },
@@ -27,7 +27,10 @@ const RATIOS = [
 ];
 
 // 旧画布数据升级：给已存在的图片卡补上 videoRatio 字段，避免清空画布
-const imageCardVersions = createShapePropsMigrationIds("image-card", { AddVideoRatio: 1 });
+const imageCardVersions = createShapePropsMigrationIds("image-card", {
+  AddVideoRatio: 1,
+  AddName: 2,
+});
 const imageCardMigrations = createShapePropsMigrationSequence({
   sequence: [
     {
@@ -37,6 +40,15 @@ const imageCardMigrations = createShapePropsMigrationSequence({
       },
       down(props: any) {
         delete props.videoRatio;
+      },
+    },
+    {
+      id: imageCardVersions.AddName,
+      up(props: any) {
+        props.name = "";
+      },
+      down(props: any) {
+        delete props.name;
       },
     },
   ],
@@ -63,7 +75,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
   const {
     status, imageUrl, error, videoModel, motion, prompt,
     videoResolution, videoDuration, videoRatio, w, h,
-  } = shape.props;
+   name } = shape.props;
 
   function update(props: Partial<ImageShape["props"]>) {
     editor.updateShape<ImageShape>({ id: shape.id, type: "image-card", props });
@@ -181,7 +193,16 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             background: "#fff",
           }}
         >
-          <span style={labelStyle}>图片 · 下一步生成视频</span>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <span style={labelStyle}>图片</span>
+            <input
+              style={nameInputStyle}
+              placeholder="未命名"
+              value={name}
+              onPointerDown={(e) => e.stopPropagation()}
+              onChange={(e) => update({ name: e.target.value })}
+            />
+          </div>
           <textarea
             placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
             value={motion}
@@ -282,6 +303,7 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<ImageShape> {
   static override props = {
     w: T.number,
     h: T.number,
+    name: T.string,
     prompt: T.string,
     model: T.string,
     videoModel: T.string,
@@ -298,6 +320,7 @@ export class ImageShapeUtil extends BaseBoxShapeUtil<ImageShape> {
 
   getDefaultProps(): ImageShape["props"] {
     return {
+      name: "",
       w: 320,
       h: 556,
       prompt: "",
