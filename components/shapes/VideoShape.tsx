@@ -6,7 +6,7 @@ import type { VideoShape } from "@/lib/types";
 import { pollVideoUntilDone, submitVideo, optimizePrompt } from "@/lib/maas";
 import { VIDEO_MODELS } from "@/lib/models";
 import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
+import { TOKENS, cardShell, labelStyle, nameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
   { v: "480p", label: "480P" },
@@ -30,6 +30,7 @@ const RATIOS = [
 const videoCardVersions = createShapePropsMigrationIds("video-card", {
   AddRatio: 1,
   AddRefAndSrcVideo: 2,
+  AddName: 3,
 });
 const videoCardMigrations = createShapePropsMigrationSequence({
   sequence: [
@@ -52,6 +53,15 @@ const videoCardMigrations = createShapePropsMigrationSequence({
       down(props: any) {
         delete props.referenceImageUrl;
         delete props.sourceVideoUrl;
+      },
+    },
+    {
+      id: videoCardVersions.AddName,
+      up(props: any) {
+        props.name = "";
+      },
+      down(props: any) {
+        delete props.name;
       },
     },
   ],
@@ -140,7 +150,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     status, taskId, videoUrl, progress, error, model, w, h,
     prompt, firstImageUrl, lastImageUrl, referenceImageUrl, sourceVideoUrl,
     resolution, duration, ratio,
-  } = shape.props;
+   name } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState(false);
   const [optBusy, setOptBusy] = useState(false);
@@ -363,7 +373,16 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     <HTMLContainer>
       <div style={cardShell(TOKENS.video, w, h)}>
         <div style={{ padding: "10px 12px 0" }}>
-          <span style={labelStyle}>{status === "config" ? "视频 · 生成视频" : "视频 · 图生视频"}</span>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <span style={labelStyle}>视频</span>
+            <input
+              style={nameInputStyle}
+              placeholder="未命名"
+              value={name}
+              onPointerDown={(e) => e.stopPropagation()}
+              onChange={(e) => update({ name: e.target.value })}
+            />
+          </div>
         </div>
         <div
           style={{
@@ -844,6 +863,7 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
   static override props = {
     w: T.number,
     h: T.number,
+    name: T.string,
     prompt: T.string,
     model: T.string,
     status: T.string,
@@ -864,6 +884,7 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
 
   getDefaultProps(): VideoShape["props"] {
     return {
+      name: "",
       w: 320,
       h: 300,
       prompt: "",
