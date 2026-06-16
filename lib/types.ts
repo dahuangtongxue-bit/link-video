@@ -6,6 +6,7 @@ export type PromptShape = TLBaseShape<
   {
     w: number;
     h: number;
+    name: string;
     prompt: string;
     imageModel: string;
     size: string; // 1K / 2K / 4K
@@ -18,6 +19,7 @@ export type ImageShape = TLBaseShape<
   {
     w: number;
     h: number;
+    name: string;
     prompt: string; // 生成它的提示词（上传的为空）
     model: string; // 生成它的模型
     videoModel: string; // 下一步图生视频要用的模型
@@ -37,6 +39,7 @@ export type VideoShape = TLBaseShape<
   {
     w: number;
     h: number;
+    name: string;
     prompt: string;
     model: string;
     status: string; // config | submitting | generating | done | error
