@@ -7,6 +7,8 @@ import {
   T,
   useEditor,
   createShapeId,
+  createShapePropsMigrationIds,
+  createShapePropsMigrationSequence,
 } from "tldraw";
 import type { PromptShape } from "@/lib/types";
 import { IMAGE_MODELS, IMAGE_SIZES } from "@/lib/models";
@@ -16,6 +18,7 @@ import {
   TOKENS,
   cardShell,
   labelStyle,
+  nameInputStyle,
   primaryBtn,
   selectStyle,
   textAreaStyle,
@@ -41,7 +44,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
       setOptBusy(false);
     }
   }
-  const { prompt, imageModel, size, w, h } = shape.props;
+  const { prompt, imageModel, size, w, h , name } = shape.props;
 
   function update(props: Partial<PromptShape["props"]>) {
     editor.updateShape<PromptShape>({ id: shape.id, type: "prompt-card", props });
@@ -88,7 +91,16 @@ function PromptCard({ shape }: { shape: PromptShape }) {
   return (
     <HTMLContainer>
       <div style={{ ...cardShell(TOKENS.prompt, w, h), padding: 12, gap: 8 }}>
-        <span style={labelStyle}>提示词 · 文生图</span>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span style={labelStyle}>提示词</span>
+          <input
+            style={nameInputStyle}
+            placeholder="未命名"
+            value={name}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => update({ name: e.target.value })}
+          />
+        </div>
         <textarea
           style={{ ...textAreaStyle, flex: 1 }}
           placeholder="描述你想要的画面…"
@@ -154,11 +166,28 @@ function PromptCard({ shape }: { shape: PromptShape }) {
   );
 }
 
+const promptCardVersions = createShapePropsMigrationIds("prompt-card", { AddName: 1 });
+const promptCardMigrations = createShapePropsMigrationSequence({
+  sequence: [
+    {
+      id: promptCardVersions.AddName,
+      up(props: any) {
+        props.name = "";
+      },
+      down(props: any) {
+        delete props.name;
+      },
+    },
+  ],
+});
+
 export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
   static override type = "prompt-card" as const;
+  static override migrations = promptCardMigrations;
   static override props = {
     w: T.number,
     h: T.number,
+    name: T.string,
     prompt: T.string,
     imageModel: T.string,
     size: T.string,
@@ -168,6 +197,7 @@ export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
     return {
       w: 300,
       h: 304,
+      name: "",
       prompt: "",
       imageModel: IMAGE_MODELS[0]?.id ?? "",
       size: "2K",
