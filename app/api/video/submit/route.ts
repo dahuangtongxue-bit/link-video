@@ -93,11 +93,12 @@ export async function POST(req: NextRequest) {
     const metadata: any = { resolution: res, content };
     if (ratioVal) metadata.ratio = ratioVal;
 
+    // 时长：doubao 适配器只认 seconds(字符串经 Atoi 换算)，顶层 duration 是死字段且
+    // 在 t2v 下会触发上游 "duration is not valid" 校验报错，故只发 seconds。
     const body: any = {
       model,
       prompt: promptText,
-      duration: dur,
-      seconds: String(dur), // 适配器实际读 seconds 换算时长，双保险
+      seconds: String(dur),
       metadata,
     };
 
