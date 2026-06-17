@@ -58,6 +58,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
   const [optBusy, setOptBusy] = useState(false);
+  const [revBusy, setRevBusy] = useState(false);
   // 运动提示文本框：默认收起，点击展开（有内容时默认展开）
   const [motionOpen, setMotionOpen] = useState(false);
 
