@@ -89,10 +89,12 @@ export async function POST(req: NextRequest) {
 
     // 时长：零克云魔改版的 doubao 适配器只读顶层 seconds(字符串)，忽略 metadata.duration，
     // 且 metadata.duration 会触发上游 "duration is not valid"。故时长走顶层 seconds。
-    const metadata: any = { resolution: res, watermark: false };
+    const metadata: any = { duration: dur, resolution: res, watermark: false };
     if (ratioVal) metadata.ratio = ratioVal;
 
-    const body: any = { model, content, metadata, seconds: String(dur) };
+    // 时长双保险：metadata.duration(数字) 给文档路径，顶层 seconds(字符串) 给源码 Atoi 路径，
+    // 两者一致，确保 3 秒不被默认成 5 秒。
+    const body: any = { model, content, metadata, seconds: String(dur), duration: dur };
 
     const r = await fetch(url, {
       method: "POST",
