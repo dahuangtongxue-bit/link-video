@@ -52,6 +52,24 @@ class FatalPollError extends Error {} // 口令错误等，重试也没用
 // 文生图：一次返回图片地址
 // 文生图：走 Netlify 后台函数（15 分钟额度）+ 轮询取结果。
 // 原因：Seedream 5.0 在 2K/4K 档的生成时长远超普通函数 10~26 秒上限，同步等待必 504。
+// 把图片（base64 或 URL）转存到 ImgBB 拿永久公网 URL。
+// 失败抛错，调用方自行决定是否降级。
+export async function rehostImage(image: string): Promise<string> {
+  const res = await fetchWithTimeout(
+    "/api/rehost",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ image }),
+    },
+    60000
+  );
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json();
+  if (!data.url) throw new Error("转存未返回 URL");
+  return data.url as string;
+}
+
 export async function generateImage(prompt: string, model: string, size?: string): Promise<string> {
   const jobId =
     (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
