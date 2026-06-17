@@ -15,6 +15,7 @@ import "tldraw/tldraw.css";
 import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
+import TaskPanel from "./TaskPanel";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
 
@@ -36,6 +37,7 @@ const components: TLComponents = {
   MenuPanel: null,
   StylePanel: null,
   Toolbar: MinimalToolbar,
+  InFrontOfTheCanvas: TaskPanel,
 };
 
 export default function Canvas() {
