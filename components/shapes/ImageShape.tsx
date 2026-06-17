@@ -58,6 +58,8 @@ function ImageCard({ shape }: { shape: ImageShape }) {
   const editor = useEditor();
   const [busy, setBusy] = useState(false);
   const [optBusy, setOptBusy] = useState(false);
+  // 运动提示文本框：默认收起，点击展开（有内容时默认展开）
+  const [motionOpen, setMotionOpen] = useState(false);
 
   async function handleOptimize() {
     const text = (motion || "").trim();
@@ -204,13 +206,39 @@ function ImageCard({ shape }: { shape: ImageShape }) {
           }}
         >
           <span style={labelStyle}>图片</span>
-          <textarea
-            placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
-            value={motion}
-            style={{ ...textAreaStyle, minHeight: 92, flex: "0 0 auto" }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) => update({ motion: e.target.value })}
-          />
+          {motionOpen || motion ? (
+            <textarea
+              placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
+              value={motion}
+              autoFocus={motionOpen && !motion}
+              style={{ ...textAreaStyle, minHeight: 92, flex: "0 0 auto" }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onChange={(e) => update({ motion: e.target.value })}
+            />
+          ) : (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMotionOpen(true);
+              }}
+              style={{
+                height: 34,
+                borderRadius: 8,
+                border: `1px dashed ${TOKENS.border}`,
+                background: "#fafafa",
+                color: TOKENS.muted,
+                fontSize: 12,
+                cursor: "text",
+                textAlign: "left",
+                padding: "0 10px",
+                pointerEvents: "all",
+                fontFamily: TOKENS.sans,
+              }}
+            >
+              + 添加运动 / 镜头提示（可选）
+            </button>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <select
               style={{ ...selectStyle, flex: 1 }}
