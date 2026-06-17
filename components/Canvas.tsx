@@ -16,6 +16,7 @@ import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
 import TaskPanel from "./TaskPanel";
+import SelectionToolbar from "./SelectionToolbar";
 import { rehostImage } from "@/lib/maas";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
@@ -33,12 +34,22 @@ function MinimalToolbar() {
   );
 }
 
+// InFrontOfTheCanvas 只能挂一个组件，这里把「任务记录面板」和「选中浮动工具条」合并
+function CanvasOverlay() {
+  return (
+    <>
+      <SelectionToolbar />
+      <TaskPanel />
+    </>
+  );
+}
+
 // 收掉官方主菜单/分享面板/右侧样式面板，底部工具栏精简为两键
 const components: TLComponents = {
   MenuPanel: null,
   StylePanel: null,
   Toolbar: MinimalToolbar,
-  InFrontOfTheCanvas: TaskPanel,
+  InFrontOfTheCanvas: CanvasOverlay,
 };
 
 export default function Canvas() {
