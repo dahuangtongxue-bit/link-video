@@ -1,383 +1,63 @@
-"use client";
+import { NextRequest, NextResponse } from "next/server";
+import { checkAuth, imageIsMock, IMAGE_API_KEY, IMAGE_BASE_URL, sleep } from "@/lib/serverAuth";
 
-import { useState } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
-import type { ImageShape } from "@/lib/types";
-import { VIDEO_MODELS } from "@/lib/models";
-import { submitVideo, optimizePrompt } from "@/lib/maas";
-import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, nameInputStyle, outerNameRowStyle, outerNameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const RESOLUTIONS = [
-  { v: "480p", label: "480P" },
-  { v: "720p", label: "720P" },
-  { v: "1080p", label: "1080P" },
-];
-const DURATIONS = ["3", "4", "5", "6", "7", "8", "9", "10"].map((v) => ({
-  v,
-  label: `${v} 秒`,
-}));
-const RATIOS = [
-  { v: "adaptive", label: "自动比例" },
-  { v: "16:9", label: "16:9" },
-  { v: "9:16", label: "9:16" },
-  { v: "1:1", label: "1:1" },
-  { v: "4:3", label: "4:3" },
-  { v: "3:4", label: "3:4" },
-];
+export async function POST(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-// 旧画布数据升级：给已存在的图片卡补上 videoRatio 字段，避免清空画布
-const imageCardVersions = createShapePropsMigrationIds("image-card", {
-  AddVideoRatio: 1,
-  AddName: 2,
-});
-const imageCardMigrations = createShapePropsMigrationSequence({
-  sequence: [
-    {
-      id: imageCardVersions.AddVideoRatio,
-      up(props: any) {
-        props.videoRatio = "adaptive";
-      },
-      down(props: any) {
-        delete props.videoRatio;
-      },
-    },
-    {
-      id: imageCardVersions.AddName,
-      up(props: any) {
-        props.name = "";
-      },
-      down(props: any) {
-        delete props.name;
-      },
-    },
-  ],
-});
+  const { prompt, model, size } = await req.json().catch(() => ({}));
+  if (!prompt) return NextResponse.json({ error: "缺少 prompt" }, { status: 400 });
 
-function ImageCard({ shape }: { shape: ImageShape }) {
-  const editor = useEditor();
-  const [busy, setBusy] = useState(false);
-  const [optBusy, setOptBusy] = useState(false);
-  // 运动提示文本框：默认收起，点击展开（有内容时默认展开）
-  const [motionOpen, setMotionOpen] = useState(false);
-
-  async function handleOptimize() {
-    const text = (motion || "").trim();
-    if (!text || optBusy) return;
-    setOptBusy(true);
-    try {
-      const better = await optimizePrompt(text, "video");
-      if (editor.getShape(shape.id)) update({ motion: better });
-    } catch (e: any) {
-      window.alert("优化失败：" + String(e?.message || e));
-    } finally {
-      setOptBusy(false);
-    }
-  }
-  const {
-    status, imageUrl, error, videoModel, motion, prompt,
-    videoResolution, videoDuration, videoRatio, w, h,
-   name } = shape.props;
-
-  function update(props: Partial<ImageShape["props"]>) {
-    editor.updateShape<ImageShape>({ id: shape.id, type: "image-card", props });
-  }
-
-  async function handleMakeVideo() {
-    if (busy || status !== "done" || !imageUrl) return;
-    setBusy(true);
-    const motionPrompt = (motion || prompt || "").trim();
-
-    const id = createShapeId();
-    editor.createShape({
-      id,
-      type: "video-card",
-      x: shape.x + w + 80,
-      y: shape.y,
-      props: { status: "submitting", prompt: motionPrompt, model: videoModel },
-    });
-    connectShapes(editor, shape.id, id);
-    editor.select(id);
-
-    try {
-      const taskId = await submitVideo({
-        imageUrl,
-        prompt: motionPrompt,
-        model: videoModel,
-        resolution: videoResolution,
-        duration: videoDuration,
-        ratio: videoRatio,
-      });
-      if (editor.getShape(id)) {
-        editor.updateShape({ id, type: "video-card", props: { status: "generating", taskId } });
-      }
-    } catch (e: any) {
-      if (editor.getShape(id)) {
-        editor.updateShape({
-          id,
-          type: "video-card",
-          props: { status: "error", error: String(e?.message || e) },
-        });
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <HTMLContainer>
-      <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
-        <div style={outerNameRowStyle}>
-          <input
-            style={outerNameInputStyle}
-            placeholder="图片 · 未命名"
-            value={name}
-            onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) => update({ name: e.target.value })}
-          />
-        </div>
-        <div style={cardShell(TOKENS.image, w, h)}>
-        {/* 图片区 */}
-        <div
-          style={{
-            flex: 1,
-            background: "#f3f4f6",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            minHeight: 0,
-          }}
-        >
-          {status === "generating" && (
-            <div style={{ textAlign: "center", color: TOKENS.muted }}>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  margin: "0 auto 8px",
-                  border: `3px solid ${TOKENS.border}`,
-                  borderTopColor: TOKENS.image,
-                  borderRadius: "50%",
-                  animation: "ac-spin 0.8s linear infinite",
-                }}
-              />
-              <div style={{ fontSize: 12, fontFamily: TOKENS.mono }}>生成中…</div>
-            </div>
-          )}
-          {status === "error" && (
-            <div
-              style={{
-                padding: 14,
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: TOKENS.error,
-                textAlign: "left",
-                overflow: "auto",
-                maxHeight: "100%",
-                pointerEvents: "all",
-                wordBreak: "break-all",
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              生成失败：{error}
-            </div>
-          )}
-          {status === "done" && imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageUrl}
-              alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              draggable={false}
-            />
-          )}
-        </div>
-
-        {/* 控制区：图生视频 */}
-        <div
-          style={{
-            padding: 10,
-            borderTop: `1px solid ${TOKENS.border}`,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            background: "#fff",
-          }}
-        >
-          <span style={labelStyle}>图片</span>
-          {motionOpen || motion ? (
-            <textarea
-              placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
-              value={motion}
-              autoFocus={motionOpen && !motion}
-              style={{ ...textAreaStyle, minHeight: 92, flex: "0 0 auto" }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ motion: e.target.value })}
-            />
-          ) : (
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setMotionOpen(true);
-              }}
-              style={{
-                height: 34,
-                borderRadius: 8,
-                border: `1px dashed ${TOKENS.border}`,
-                background: "#fafafa",
-                color: TOKENS.muted,
-                fontSize: 12,
-                cursor: "text",
-                textAlign: "left",
-                padding: "0 10px",
-                pointerEvents: "all",
-                fontFamily: TOKENS.sans,
-              }}
-            >
-              + 添加运动 / 镜头提示（可选）
-            </button>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              style={{ ...selectStyle, flex: 1 }}
-              value={videoRatio}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ videoRatio: e.target.value })}
-            >
-              {RATIOS.map((r) => (
-                <option key={r.v} value={r.v}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <button
-              style={{
-                height: 28,
-                padding: "0 10px",
-                borderRadius: 8,
-                border: "1px solid " + TOKENS.border,
-                background: "#fff",
-                color: "#475569",
-                fontSize: 11,
-                cursor: optBusy || !(motion || "").trim() ? "default" : "pointer",
-                opacity: optBusy || !(motion || "").trim() ? 0.5 : 1,
-                pointerEvents: "all",
-                flex: "0 0 auto",
-              }}
-              disabled={optBusy || !(motion || "").trim()}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={handleOptimize}
-            >
-              {optBusy ? "优化中…" : "✨ 优化"}
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              style={{ ...selectStyle, flex: 1 }}
-              value={videoResolution}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ videoResolution: e.target.value })}
-            >
-              {RESOLUTIONS.map((r) => (
-                <option key={r.v} value={r.v}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <select
-              style={{ ...selectStyle, flex: 1 }}
-              value={videoDuration}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ videoDuration: e.target.value })}
-            >
-              {DURATIONS.map((d) => (
-                <option key={d.v} value={d.v}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
-              style={{ ...selectStyle, flex: 1 }}
-              value={videoModel}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ videoModel: e.target.value })}
-            >
-              {VIDEO_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <button
-              style={primaryBtn(TOKENS.video, busy || status !== "done")}
-              disabled={busy || status !== "done"}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={handleMakeVideo}
-            >
-              {busy ? "提交中…" : "生成视频"}
-            </button>
-          </div>
-        </div>
-        </div>
-      </div>
-    </HTMLContainer>
-  );
-}
-
-export class ImageShapeUtil extends BaseBoxShapeUtil<ImageShape> {
-  static override type = "image-card" as const;
-  static override props = {
-    w: T.number,
-    h: T.number,
-    name: T.string,
-    prompt: T.string,
-    model: T.string,
-    videoModel: T.string,
-    motion: T.string,
-    videoResolution: T.string,
-    videoDuration: T.string,
-    videoRatio: T.string,
-    status: T.string,
-    imageUrl: T.string,
-    error: T.string,
+  // 分辨率档位 → 像素。Seedream 4.x 要求 ≥3686400 像素（1K 大概率被拒）；
+  // 5.0 各档支持情况以平台实测为准——不支持时平台错误会原样显示在卡片上。
+  const SIZE_MAP: Record<string, string> = {
+    "1K": "1024x1024",
+    "2K": "2048x2048",
+    "4K": "4096x4096",
   };
+  const px = SIZE_MAP[String(size || "").toUpperCase()] || "2048x2048";
 
-  static migrations = imageCardMigrations;
-
-  getDefaultProps(): ImageShape["props"] {
-    return {
-      name: "",
-      w: 320,
-      h: 556,
-      prompt: "",
-      model: "",
-      videoModel: VIDEO_MODELS[0]?.id ?? "",
-      motion: "",
-      videoResolution: "720p",
-      videoDuration: "5",
-      videoRatio: "adaptive",
-      status: "generating",
-      imageUrl: "",
-      error: "",
-    };
+  // ---------- MOCK：未配置平台时返回占位图 ----------
+  if (imageIsMock) {
+    await sleep(1500);
+    const seed = encodeURIComponent(String(prompt)).slice(0, 24) || "ai";
+    return NextResponse.json({ imageUrl: `https://picsum.photos/seed/${seed}/768/768` });
   }
 
-  override canResize() {
-    return false;
-  }
-  override canEdit() {
-    return false;
-  }
+  // ===================================================================
+  // 豆包图像（Seedream）：OpenAI 兼容的同步接口。
+  // 已按公开标准格式接好；若你 零克云 文档不同，核对带 ← 的几行即可。
+  // ===================================================================
+  try {
+    const r = await fetch(`${IMAGE_BASE_URL}/v1/images/generations`, {   // ← 接口路径
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${IMAGE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,                       // 模型名来自 lib/models.ts
+        prompt,
+        size: px,                    // ← 由界面选择的 1K/2K/4K 映射而来，默认 2K
+        response_format: "url",      // ← 要 url；平台只给 base64 就改 "b64_json"
+        watermark: false,            // ← 去水印（个别平台没这个字段，删掉即可）
+      }),
+    });
 
-  component(shape: ImageShape) {
-    return <ImageCard shape={shape} />;
-  }
+    if (!r.ok) {
+      const t = await r.text();
+      return NextResponse.json({ error: `平台返回错误: ${t.slice(0, 300)}` }, { status: 502 });
+    }
 
-  indicator(shape: ImageShape) {
-    return <rect width={shape.props.w} height={shape.props.h} rx={12} ry={12} />;
+    const data = await r.json();
+    const raw: string | undefined = data?.data?.[0]?.url || data?.data?.[0]?.b64_json; // ← 取图地址
+    if (!raw) return NextResponse.json({ error: "未从响应解析到图片" }, { status: 502 });
+
+    const imageUrl = raw.startsWith("http") ? raw : `data:image/png;base64,${raw}`;
+    return NextResponse.json({ imageUrl });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "请求平台失败" }, { status: 500 });
   }
 }
