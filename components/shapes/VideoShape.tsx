@@ -144,6 +144,35 @@ function FrameSlot({
   );
 }
 
+// 提交前把 base64 图再压一道（长边 1024、JPEG 0.6），避免两张首尾帧 base64 撑爆
+// Netlify 请求体上限导致 504。只压 data URL；http/asset 引用原样返回。
+async function shrinkDataUrl(url: string): Promise<string> {
+  if (!url || !url.startsWith("data:")) return url;
+  try {
+    const img = document.createElement("img");
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error("图片解码失败"));
+      img.src = url;
+    });
+    const maxEdge = 1024;
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return url;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.6);
+  } catch {
+    return url; // 压缩失败就用原图（可能还是会 504，但不至于直接崩）
+  }
+}
+
 function VideoCard({ shape }: { shape: VideoShape }) {
   const editor = useEditor();
   const {
@@ -235,9 +264,12 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       if (refForSubmit && !refForSubmit.startsWith("asset://")) {
         refForSubmit = await uploadAsset(refForSubmit);
       }
+      // 上传图(base64)提交前再压缩，避免请求体过大导致 504
+      const firstForSubmit = await shrinkDataUrl(firstImageUrl || "");
+      const lastForSubmit = await shrinkDataUrl(lastImageUrl || "");
       const newTaskId = await submitVideo({
-        firstImageUrl: firstImageUrl || undefined,
-        lastImageUrl: lastImageUrl || undefined,
+        firstImageUrl: firstForSubmit || undefined,
+        lastImageUrl: lastForSubmit || undefined,
         referenceImageUrl: refForSubmit || undefined,
         sourceVideoUrl: sourceVideoUrl || undefined,
         prompt: (prompt || "").trim() || "让画面自然地动起来，保持主体稳定、镜头平滑",
