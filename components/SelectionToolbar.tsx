@@ -29,6 +29,13 @@ export default function SelectionToolbar() {
   const bounds = editor.getShapePageBounds(shape.id);
   if (!bounds) return null;
 
+  // InFrontOfTheCanvas 处于「屏幕坐标系」（不在画布 transform 层内），
+  // 所以要把卡片的页面坐标换算成屏幕坐标：screen = (page - camera) * zoom
+  const cam = editor.getCamera();
+  const z = cam.z;
+  const screenX = (bounds.x + bounds.w / 2 - cam.x) * z;
+  const screenTop = (bounds.y - cam.y) * z;
+
   const dup = () => editor.duplicateShapes([shape.id], { x: 40, y: 40 });
   const toFront = () => editor.bringToFront([shape.id]);
   const del = () => editor.deleteShapes([shape.id]);
@@ -66,8 +73,8 @@ export default function SelectionToolbar() {
     <div
       style={{
         position: "absolute",
-        left: bounds.x + bounds.w / 2,
-        top: bounds.y,
+        left: screenX,
+        top: screenTop,
         transform: "translate(-50%, calc(-100% - 10px))",
         display: "flex",
         alignItems: "center",
