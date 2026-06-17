@@ -19,6 +19,8 @@ import {
   cardShell,
   labelStyle,
   nameInputStyle,
+  outerNameRowStyle,
+  outerNameInputStyle,
   primaryBtn,
   selectStyle,
   textAreaStyle,
@@ -90,17 +92,18 @@ function PromptCard({ shape }: { shape: PromptShape }) {
 
   return (
     <HTMLContainer>
-      <div style={{ ...cardShell(TOKENS.prompt, w, h), padding: 12, gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span style={labelStyle}>提示词</span>
+      <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
+        <div style={outerNameRowStyle}>
           <input
-            style={nameInputStyle}
-            placeholder="未命名"
+            style={outerNameInputStyle}
+            placeholder="提示词 · 未命名"
             value={name}
             onPointerDown={(e) => e.stopPropagation()}
             onChange={(e) => update({ name: e.target.value })}
           />
         </div>
+        <div style={{ ...cardShell(TOKENS.prompt, w, h), padding: 12, gap: 8 }}>
+        <span style={labelStyle}>提示词</span>
         <textarea
           style={{ ...textAreaStyle, flex: 1 }}
           placeholder="描述你想要的画面…"
@@ -161,6 +164,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
         >
           {busy ? "生成中…" : "生成图片"}
         </button>
+        </div>
       </div>
     </HTMLContainer>
   );
