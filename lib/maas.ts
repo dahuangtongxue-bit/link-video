@@ -147,6 +147,23 @@ export async function optimizePrompt(prompt: string, kind: "image" | "video"): P
   return data.prompt as string;
 }
 
+// 反推提示词（图生文）：把图片 URL 丢给视觉模型，反推出一段文生图提示词。
+export async function describeImage(imageUrl: string): Promise<string> {
+  const res = await fetchWithTimeout(
+    "/api/describe",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ imageUrl }),
+    },
+    60000
+  );
+  if (!res.ok) throw new Error(await readError(res));
+  const data = await res.json();
+  if (!data.prompt) throw new Error("未拿到反推结果");
+  return data.prompt as string;
+}
+
 // 把公网图片 URL 导入 Seedance 素材库，返回 asset://{assetId} 引用。
 // 参考图必须走这条：零克云网关会丢弃裸 URL 的 reference_image，只认 asset:// 形式。
 export async function uploadAsset(
