@@ -16,7 +16,8 @@ export const maxDuration = 90;
 // （实测 scenario 退化成 text_to_video），只有 asset:// 引用才被正确透传给上游。
 
 async function callAsset(action: string, payload: any) {
-  const url = `${VIDEO_BASE_URL}/seedance/asset/${action}`;
+  // VIDEO_BASE_URL 已被 cleanBase 去掉 /v1，这里必须补回，否则打到前端 HTML
+  const url = `${VIDEO_BASE_URL}/v1/seedance/asset/${action}`;
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${VIDEO_API_KEY}` },
