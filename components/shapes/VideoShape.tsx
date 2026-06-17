@@ -6,7 +6,7 @@ import type { VideoShape } from "@/lib/types";
 import { pollVideoUntilDone, submitVideo, optimizePrompt, uploadAsset } from "@/lib/maas";
 import { VIDEO_MODELS } from "@/lib/models";
 import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, nameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
+import { TOKENS, cardShell, labelStyle, nameInputStyle, outerNameRowStyle, outerNameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
   { v: "480p", label: "480P" },
@@ -153,6 +153,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
    name } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // done 视频右下角"更多"菜单
   const [optBusy, setOptBusy] = useState(false);
 
   async function handleOptimize() {
@@ -381,18 +382,19 @@ function VideoCard({ shape }: { shape: VideoShape }) {
 
   return (
     <HTMLContainer>
-      <div style={cardShell(TOKENS.video, w, h)}>
+      <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
+        <div style={outerNameRowStyle}>
+          <input
+            style={outerNameInputStyle}
+            placeholder="视频 · 未命名"
+            value={name}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => update({ name: e.target.value })}
+          />
+        </div>
+        <div style={cardShell(TOKENS.video, w, h)}>
         <div style={{ padding: "10px 12px 0" }}>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <span style={labelStyle}>视频</span>
-            <input
-              style={nameInputStyle}
-              placeholder="未命名"
-              value={name}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ name: e.target.value })}
-            />
-          </div>
+          <span style={labelStyle}>视频</span>
         </div>
         <div
           style={{
@@ -518,21 +520,118 @@ function VideoCard({ shape }: { shape: VideoShape }) {
             </div>
           )}
           {status === "done" && videoUrl && (
-            <video
-              src={videoUrl}
-              controls
-              loop
-              playsInline
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-                pointerEvents: "all",
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onLoadedMetadata={(e) => fitToVideo(e.currentTarget)}
-            />
+            <div style={{ position: "relative", width: "100%", height: "100%" }}>
+              <video
+                src={videoUrl}
+                controls
+                loop
+                playsInline
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                  pointerEvents: "all",
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onLoadedMetadata={(e) => fitToVideo(e.currentTarget)}
+              />
+              {/* 右下角"更多"按钮 */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen((v) => !v);
+                }}
+                title="更多"
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  bottom: 44,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: "none",
+                  background: "rgba(15,17,21,0.6)",
+                  color: "#fff",
+                  fontSize: 16,
+                  lineHeight: "30px",
+                  padding: 0,
+                  cursor: "pointer",
+                  pointerEvents: "all",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div
+                  onPointerDown={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    bottom: 80,
+                    minWidth: 132,
+                    background: "#fff",
+                    borderRadius: 10,
+                    boxShadow: "0 8px 24px rgba(15,17,21,0.18)",
+                    border: `1px solid ${TOKENS.border}`,
+                    overflow: "hidden",
+                    pointerEvents: "all",
+                    zIndex: 10,
+                  }}
+                >
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      alert(
+                        "Remix（基于这条视频再生成）依赖平台的参考视频接口，零克云当前版本尚未上线，暂不可用。\n已可用：首尾帧、图生视频、文生视频。"
+                      );
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "9px 12px",
+                      border: "none",
+                      background: "#fff",
+                      color: "#b0b6c0",
+                      fontSize: 12,
+                      cursor: "not-allowed",
+                      pointerEvents: "all",
+                    }}
+                    title="平台暂未支持，敬请期待"
+                  >
+                    🎬 Remix 这条视频 *
+                  </button>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      window.open(videoUrl, "_blank");
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "9px 12px",
+                      border: "none",
+                      borderTop: `1px solid ${TOKENS.border}`,
+                      background: "#fff",
+                      color: "#475569",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      pointerEvents: "all",
+                    }}
+                  >
+                    ⬇ 下载 / 新窗口打开
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -590,27 +689,38 @@ function VideoCard({ shape }: { shape: VideoShape }) {
             {/* 模式切换 */}
             <div style={{ display: "flex", gap: 6 }}>
               {([
-                ["frames", "首尾帧"],
-                ["ref", "参考图"],
-                ["srcvideo", "续/编辑"],
-              ] as const).map(([m, label]) => (
+                ["frames", "首尾帧", false],
+                ["ref", "参考图", true],
+                ["srcvideo", "续/编辑", true],
+              ] as const).map(([m, label, disabled]) => (
                 <button
                   key={m}
                   onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => switchMode(m)}
+                  onClick={() => {
+                    if (disabled) {
+                      alert(
+                        "「" + label + "」依赖平台的参考素材接口，零克云当前版本尚未上线，暂不可用。\n已可用：首尾帧、图生视频、文生视频。"
+                      );
+                      return;
+                    }
+                    switchMode(m as "frames" | "ref" | "srcvideo");
+                  }}
+                  title={disabled ? "平台暂未支持，敬请期待" : ""}
                   style={{
                     flex: 1,
                     height: 28,
                     borderRadius: 8,
                     border: `1px solid ${mode === m ? TOKENS.video : TOKENS.border}`,
                     background: mode === m ? TOKENS.video : "#fff",
-                    color: mode === m ? "#fff" : "#475569",
+                    color: disabled ? "#b0b6c0" : mode === m ? "#fff" : "#475569",
                     fontSize: 11,
-                    cursor: "pointer",
+                    cursor: disabled ? "not-allowed" : "pointer",
                     pointerEvents: "all",
+                    position: "relative",
                   }}
                 >
                   {label}
+                  {disabled ? "*" : ""}
                 </button>
               ))}
             </div>
@@ -865,6 +975,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
             ) : null}
           </div>
         )}
+        </div>
       </div>
     </HTMLContainer>
   );
