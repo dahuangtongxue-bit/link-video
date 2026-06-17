@@ -83,6 +83,29 @@ function ImageCard({ shape }: { shape: ImageShape }) {
     editor.updateShape<ImageShape>({ id: shape.id, type: "image-card", props });
   }
 
+  // 反推提示词：把这张图丢给视觉模型反推出文生图提示词，
+  // 结果新建一个「文生图」提示词卡填入，方便直接拿去再生图或修改。
+  async function reversePrompt() {
+    if (revBusy || status !== "done" || !imageUrl) return;
+    setRevBusy(true);
+    try {
+      const text = await describeImage(imageUrl);
+      const id = createShapeId();
+      editor.createShape({
+        id,
+        type: "prompt-card",
+        x: shape.x,
+        y: shape.y + h + 60,
+        props: { prompt: text, name: "反推提示词" },
+      });
+      editor.select(id);
+    } catch (e: any) {
+      window.alert(`反推失败：${String(e?.message || e)}`);
+    } finally {
+      if (editor.getShape(shape.id)) setRevBusy(false);
+    }
+  }
+
   async function handleMakeVideo() {
     if (busy || status !== "done" || !imageUrl) return;
     setBusy(true);
@@ -191,6 +214,35 @@ function ImageCard({ shape }: { shape: ImageShape }) {
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
               draggable={false}
             />
+          )}
+          {status === "done" && imageUrl && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                reversePrompt();
+              }}
+              disabled={revBusy}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                height: 28,
+                padding: "0 10px",
+                borderRadius: 8,
+                border: "none",
+                background: revBusy ? "rgba(15,17,21,0.5)" : "rgba(15,17,21,0.72)",
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: revBusy ? "default" : "pointer",
+                pointerEvents: "all",
+                backdropFilter: "blur(4px)",
+              }}
+              title="用 AI 反推这张图的提示词，生成一个文生图卡片"
+            >
+              {revBusy ? "反推中…" : "🔍 反推提示词"}
+            </button>
           )}
         </div>
 
