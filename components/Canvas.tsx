@@ -16,6 +16,7 @@ import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
 import TaskPanel from "./TaskPanel";
+import { rehostImage } from "@/lib/maas";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
 
@@ -154,9 +155,10 @@ export default function Canvas() {
     e.target.value = "";
     if (!editor || !file) return;
     fileToCompressedDataUrl(file)
-      .then((dataUrl) => {
+      .then(async (dataUrl) => {
         const c = centerPoint(editor);
         const id = createShapeId();
+        // 先建卡占位（先用本地图显示，避免等待）
         editor.createShape({
           id,
           type: "image-card",
@@ -165,6 +167,15 @@ export default function Canvas() {
           props: { status: "done", imageUrl: dataUrl, prompt: "(上传)" },
         });
         editor.select(id);
+        // 后台转存到 ImgBB 拿永久 URL：上传图(base64)平台不认，转存后才能做参考图/首尾帧
+        try {
+          const permanent = await rehostImage(dataUrl);
+          if (permanent && editor.getShape(id)) {
+            editor.updateShape({ id, type: "image-card", props: { imageUrl: permanent } });
+          }
+        } catch {
+          // 转存失败就保留本地图（仍可看，只是不能做参考图/首尾帧）
+        }
       })
       .catch((err) => {
         window.alert(String(err?.message || err));
