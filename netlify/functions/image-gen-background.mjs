@@ -10,29 +10,55 @@ function cleanBase(b) {
 
 // 把图片（火山临时 URL 或 base64）转存到 ImgBB，拿永久公网 URL。
 // 火山 TOS 的签名 URL 24 小时过期，转存后永不过期，后续参考图/首尾帧/remix 才不会 403。
-// 失败时返回原 URL（降级，不阻断生成）。
+// 返回 { url, diag }：url 是转存后地址（失败则原图），diag 是诊断信息（写进 blob 方便排查）。
 async function rehostToImgbb(imageUrlOrB64) {
   const KEY = (process.env.IMGBB_API_KEY || "").trim();
-  if (!KEY) return imageUrlOrB64; // 没配 key 就不转存，用原图
+  if (!KEY) return { url: imageUrlOrB64, diag: "no_key" };
   try {
-    // ImgBB 的 image 参数：可以是图片 URL，也可以是纯 base64（去掉 data: 前缀）。
-    let imageParam = imageUrlOrB64;
+    // 1) 统一拿到纯 base64：
+    //    - 如果是 data: base64，去掉前缀；
+    //    - 如果是 http URL（火山签名 URL），先下载成 base64（不让 ImgBB 自己去拉，避免防盗链/签名拒绝）。
+    let base64 = "";
     const m = /^data:image\/[^;]+;base64,(.+)$/.exec(imageUrlOrB64 || "");
-    if (m) imageParam = m[1]; // base64：去掉 data 前缀
-    // 若是 http URL，ImgBB 支持直接传 URL 让它去拉
+    if (m) {
+      base64 = m[1];
+    } else if (/^https?:\/\//.test(imageUrlOrB64 || "")) {
+      const imgResp = await fetch(imageUrlOrB64);
+      if (!imgResp.ok) {
+        return { url: imageUrlOrB64, diag: `fetch_src_failed_${imgResp.status}` };
+      }
+      const buf = await imgResp.arrayBuffer();
+      base64 = Buffer.from(buf).toString("base64");
+    } else {
+      return { url: imageUrlOrB64, diag: "unknown_input" };
+    }
+
+    if (!base64) return { url: imageUrlOrB64, diag: "empty_base64" };
+
+    // 2) 传 ImgBB（纯 base64）
     const form = new URLSearchParams();
-    form.append("image", imageParam);
+    form.append("image", base64);
     const resp = await fetch(`https://api.imgbb.com/1/upload?key=${KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form.toString(),
     });
-    const j = await resp.json().catch(() => null);
+    const txt = await resp.text();
+    let j = null;
+    try {
+      j = JSON.parse(txt);
+    } catch {}
     const permanent = j && j.data && (j.data.url || j.data.display_url);
-    if (resp.ok && permanent) return permanent;
-    return imageUrlOrB64; // 转存失败，降级用原图
-  } catch {
-    return imageUrlOrB64; // 网络异常，降级用原图
+    if (resp.ok && permanent) {
+      return { url: permanent, diag: "ok" };
+    }
+    // 失败：把 ImgBB 返回的状态和前 200 字记下来
+    return {
+      url: imageUrlOrB64,
+      diag: `imgbb_${resp.status}: ${txt.slice(0, 200)}`,
+    };
+  } catch (e) {
+    return { url: imageUrlOrB64, diag: `exception: ${String((e && e.message) || e)}` };
   }
 }
 
@@ -99,8 +125,8 @@ export default async (req) => {
     }
     const imageUrl = String(raw).startsWith("http") ? raw : `data:image/png;base64,${raw}`;
     // 转存到 ImgBB 拿永久 URL（火山 URL 24h 过期，转存后参考图/首尾帧/remix 才不会 403）
-    const permanentUrl = await rehostToImgbb(imageUrl);
-    await write({ status: "done", imageUrl: permanentUrl });
+    const { url: permanentUrl, diag } = await rehostToImgbb(imageUrl);
+    await write({ status: "done", imageUrl: permanentUrl, rehostDiag: diag });
   } catch (e) {
     await write({ status: "error", error: String((e && e.message) || e) });
   }
