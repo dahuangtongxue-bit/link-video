@@ -50,12 +50,10 @@ export async function POST(req: NextRequest) {
   // 零克云 Seedance 的参考图/源视频只认公网可访问地址（官方操练场的"图片地址"也只收 URL），
   // base64 data URL 会被网关丢弃、退化成纯文生视频。生成的图/视频自带火山引擎公网 URL，可直接用；
   // 上传的图是 data URL，没有公网地址，参考图模式下明确拦下。
+  // 参考图必须是 asset://（素材库引用，前端已调 /api/asset 转换）或公网 URL，绝不能是 data URL
   if (refImg.startsWith("data:")) {
     return NextResponse.json(
-      {
-        error:
-          "参考图暂不支持上传的图片（无公网地址）。请改用「文生图」生成的图片作为参考图——它有公网链接，平台才能识别。",
-      },
+      { error: "参考图需先入素材库（前端应已自动处理）。data URL 不被接受。" },
       { status: 400 }
     );
   }
