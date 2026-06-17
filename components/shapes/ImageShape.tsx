@@ -6,7 +6,7 @@ import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
 import { submitVideo, optimizePrompt } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
-import { TOKENS, cardShell, labelStyle, nameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
+import { TOKENS, cardShell, labelStyle, nameInputStyle, outerNameRowStyle, outerNameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
 const RESOLUTIONS = [
   { v: "480p", label: "480P" },
@@ -124,7 +124,17 @@ function ImageCard({ shape }: { shape: ImageShape }) {
 
   return (
     <HTMLContainer>
-      <div style={cardShell(TOKENS.image, w, h)}>
+      <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
+        <div style={outerNameRowStyle}>
+          <input
+            style={outerNameInputStyle}
+            placeholder="图片 · 未命名"
+            value={name}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => update({ name: e.target.value })}
+          />
+        </div>
+        <div style={cardShell(TOKENS.image, w, h)}>
         {/* 图片区 */}
         <div
           style={{
@@ -193,16 +203,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             background: "#fff",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <span style={labelStyle}>图片</span>
-            <input
-              style={nameInputStyle}
-              placeholder="未命名"
-              value={name}
-              onPointerDown={(e) => e.stopPropagation()}
-              onChange={(e) => update({ name: e.target.value })}
-            />
-          </div>
+          <span style={labelStyle}>图片</span>
           <textarea
             placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
             value={motion}
@@ -292,6 +293,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
               {busy ? "提交中…" : "生成视频"}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </HTMLContainer>
