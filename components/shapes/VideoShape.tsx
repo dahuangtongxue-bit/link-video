@@ -720,7 +720,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
             <div style={{ display: "flex", gap: 6 }}>
               {([
                 ["frames", "首尾帧", false],
-                ["ref", "参考图", true],
+                ["ref", "参考图", false],
                 ["srcvideo", "续/编辑", true],
               ] as const).map(([m, label, disabled]) => (
                 <button
