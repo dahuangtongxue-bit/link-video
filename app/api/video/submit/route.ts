@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const dur = Math.min(10, Math.max(3, Number(duration) || 5));
+  const dur = Math.min(15, Math.max(4, Number(duration) || 5)); // 平台最小 4 秒
   const ratioVal = typeof ratio === "string" && ratio && ratio !== "adaptive" ? ratio : "";
   const res = (resolution || "720p").toString().toLowerCase();
   const promptText =
@@ -69,10 +69,7 @@ export async function POST(req: NextRequest) {
     // 路径必须带 /v1（VIDEO_BASE_URL 已被 cleanBase 去掉 /v1）
     const url = `${VIDEO_BASE_URL}/v1/video/generations`;
 
-    // ===== 严格按零克云文档格式组装（已实测验证）=====
-    // 1) content 在 body 顶层（不是塞 metadata！）
-    // 2) text 元素在前，媒体元素（带 role）在后
-    // 3) metadata 平级放 duration(数字)/resolution/ratio/watermark
+    // content: text 在前，媒体元素(带 role)在后
     const content: any[] = [{ type: "text", text: promptText }];
     if (srcVideo) {
       content.push({ type: "video_url", video_url: { url: srcVideo }, role: "reference_video" });
@@ -87,14 +84,18 @@ export async function POST(req: NextRequest) {
       content.push({ type: "image_url", image_url: { url: lastUrl }, role: "last_frame" });
     }
 
-    // 时长：零克云魔改版的 doubao 适配器只读顶层 seconds(字符串)，忽略 metadata.duration，
-    // 且 metadata.duration 会触发上游 "duration is not valid"。故时长走顶层 seconds。
-    const metadata: any = { duration: dur, resolution: res, watermark: false };
-    if (ratioVal) metadata.ratio = ratioVal;
-
-    // 时长双保险：metadata.duration(数字) 给文档路径，顶层 seconds(字符串) 给源码 Atoi 路径，
-    // 两者一致，确保 3 秒不被默认成 5 秒。
-    const body: any = { model, content, metadata, seconds: String(dur), duration: dur };
+    // body 格式严格对照 infinite-canvas 实跑通的代码：
+    // ratio / resolution / duration / generate_audio / watermark 全部放 body 顶层，
+    // 和 model/content 平级，【不要】用 metadata 包裹（之前塞 metadata 导致 duration 各种报错）。
+    const body: any = {
+      model,
+      content,
+      resolution: res,
+      duration: dur, // 数字，平台最小 4~5 秒
+      generate_audio: true,
+      watermark: false,
+    };
+    if (ratioVal) body.ratio = ratioVal;
 
     const r = await fetch(url, {
       method: "POST",
