@@ -13,7 +13,7 @@ const RESOLUTIONS = [
   { v: "720p", label: "720P" },
   { v: "1080p", label: "1080P" },
 ];
-const DURATIONS = ["3", "4", "5", "6", "7", "8", "9", "10"].map((v) => ({
+const DURATIONS = ["5", "6", "8", "10"].map((v) => ({
   v,
   label: `${v} 秒`,
 }));
