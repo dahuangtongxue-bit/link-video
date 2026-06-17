@@ -3,6 +3,7 @@ import { checkAuth, VIDEO_API_KEY, VIDEO_BASE_URL } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 90;
 
 // 把一张公网图片 URL 导入 Seedance 素材库，返回 assetId（供视频请求里写 asset://{assetId}）。
 // 流程（已对照零克云文档「三、素材管理接口」）：
