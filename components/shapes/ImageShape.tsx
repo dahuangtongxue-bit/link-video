@@ -95,11 +95,13 @@ function ImageCard({ shape }: { shape: ImageShape }) {
       editor.createShape({
         id,
         type: "prompt-card",
-        x: shape.x,
-        y: shape.y + h + 60,
+        // 紧贴原图右侧；向下错开 180，避免和「图生视频」卡（建在正右侧）重叠
+        x: shape.x + w + 80,
+        y: shape.y + 180,
         props: { prompt: text, name: "反推提示词" },
       });
       editor.select(id);
+      editor.zoomToSelection({ animation: { duration: 300 } });
     } catch (e: any) {
       window.alert(`反推失败：${String(e?.message || e)}`);
     } finally {
