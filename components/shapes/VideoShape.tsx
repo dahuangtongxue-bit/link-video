@@ -586,9 +586,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                     onClick={(e) => {
                       e.stopPropagation();
                       setMenuOpen(false);
-                      alert(
-                        "Remix（基于这条视频再生成）依赖平台的参考视频接口，零克云当前版本尚未上线，暂不可用。\n已可用：首尾帧、图生视频、文生视频。"
-                      );
+                      alert("当前版本暂无法生成。可用：首尾帧、图生视频、文生视频。");
                     }}
                     style={{
                       display: "block",
@@ -698,9 +696,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => {
                     if (disabled) {
-                      alert(
-                        "「" + label + "」依赖平台的参考素材接口，零克云当前版本尚未上线，暂不可用。\n已可用：首尾帧、图生视频、文生视频。"
-                      );
+                      alert("当前版本暂无法生成。可用：首尾帧、图生视频、文生视频。");
                       return;
                     }
                     switchMode(m as "frames" | "ref" | "srcvideo");
