@@ -3,6 +3,8 @@ import { checkAuth, videoIsMock, VIDEO_API_KEY, VIDEO_BASE_URL } from "@/lib/ser
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// 上传图是 base64（可达数 MB），传输+提交上游耗时长，默认 10s 会 504。拉长到 60s。
+export const maxDuration = 60;
 
 const TOO_BIG = 4_000_000; // base64 data URL 上限，超了请求链路会崩
 
