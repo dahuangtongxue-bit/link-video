@@ -217,33 +217,13 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             />
           )}
           {status === "done" && imageUrl && (
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                reversePrompt();
-              }}
-              disabled={revBusy}
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                height: 28,
-                padding: "0 10px",
-                borderRadius: 8,
-                border: "none",
-                background: revBusy ? "rgba(15,17,21,0.5)" : "rgba(15,17,21,0.72)",
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: revBusy ? "default" : "pointer",
-                pointerEvents: "all",
-                backdropFilter: "blur(4px)",
-              }}
-              title="用 AI 反推这张图的提示词，生成一个文生图卡片"
-            >
-              {revBusy ? "反推中…" : "🔍 反推提示词"}
-            </button>
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt={prompt}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              draggable={false}
+            />
           )}
         </div>
 
@@ -258,7 +238,40 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             background: "#fff",
           }}
         >
-          <span style={labelStyle}>图片</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span style={labelStyle}>图片</span>
+            {status === "done" && imageUrl && (
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  reversePrompt();
+                }}
+                disabled={revBusy}
+                style={{
+                  height: 24,
+                  padding: "0 10px",
+                  borderRadius: 6,
+                  border: `1px solid ${TOKENS.image}`,
+                  background: revBusy ? "#f1f5f9" : "#fff",
+                  color: revBusy ? "#94a3b8" : TOKENS.image,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: revBusy ? "default" : "pointer",
+                  pointerEvents: "all",
+                }}
+                title="用 AI 反推这张图的提示词，生成一个文生图卡片"
+              >
+                {revBusy ? "反推中…" : "🔍 反推提示词"}
+              </button>
+            )}
+          </div>
           {motionOpen || motion ? (
             <textarea
               placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
