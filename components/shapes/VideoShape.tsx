@@ -31,6 +31,7 @@ const videoCardVersions = createShapePropsMigrationIds("video-card", {
   AddRatio: 1,
   AddRefAndSrcVideo: 2,
   AddName: 3,
+  AddRefArray: 4,
 });
 const videoCardMigrations = createShapePropsMigrationSequence({
   sequence: [
@@ -62,6 +63,16 @@ const videoCardMigrations = createShapePropsMigrationSequence({
       },
       down(props: any) {
         delete props.name;
+      },
+    },
+    {
+      // 多参考图：把旧的单张 referenceImageUrl 迁进数组 referenceImageUrls
+      id: videoCardVersions.AddRefArray,
+      up(props: any) {
+        props.referenceImageUrls = props.referenceImageUrl ? [props.referenceImageUrl] : [];
+      },
+      down(props: any) {
+        delete props.referenceImageUrls;
       },
     },
   ],
@@ -177,7 +188,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
   const editor = useEditor();
   const {
     status, taskId, videoUrl, progress, error, model, w, h,
-    prompt, firstImageUrl, lastImageUrl, referenceImageUrl, sourceVideoUrl,
+    prompt, firstImageUrl, lastImageUrl, referenceImageUrl, referenceImageUrls, sourceVideoUrl,
     resolution, duration, ratio,
    name } = shape.props;
   const shapeId = shape.id;
@@ -202,7 +213,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
   // 当前编辑模式：frames(首尾帧) / ref(参考图) / srcvideo(源视频续编)。
   // 初值按已有数据推断，之后用户可手动切；切换时清掉其它模式的输入，保证互斥
   const [mode, setMode] = useState<"frames" | "ref" | "srcvideo">(
-    sourceVideoUrl ? "srcvideo" : referenceImageUrl ? "ref" : "frames"
+    sourceVideoUrl ? "srcvideo" : (referenceImageUrl || (referenceImageUrls && referenceImageUrls.length)) ? "ref" : "frames"
   );
 
   function switchMode(next: "frames" | "ref" | "srcvideo") {
@@ -211,12 +222,30 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     // 清掉非当前模式的输入（含拆掉首尾帧箭头），避免违反混用规则
     if (firstImageUrl) disconnectFrameByUrl(firstImageUrl, firstImageUrl === lastImageUrl);
     if (lastImageUrl) disconnectFrameByUrl(lastImageUrl, lastImageUrl === firstImageUrl);
-    update({ firstImageUrl: "", lastImageUrl: "", referenceImageUrl: "", sourceVideoUrl: "" });
+    update({ firstImageUrl: "", lastImageUrl: "", referenceImageUrl: "", referenceImageUrls: [], sourceVideoUrl: "" });
     setMode(next);
   }
 
   function update(props: Partial<VideoShape["props"]>) {
     editor.updateShape<VideoShape>({ id: shapeId, type: "video-card", props });
+  }
+
+  // 多参考图列表（兼容旧单字段 referenceImageUrl）
+  const refList: string[] =
+    (referenceImageUrls && referenceImageUrls.length
+      ? referenceImageUrls
+      : referenceImageUrl
+      ? [referenceImageUrl]
+      : []) as string[];
+  const MAX_REF = 9;
+  function addRef(url: string) {
+    if (!url) return;
+    if (refList.includes(url)) return;
+    if (refList.length >= MAX_REF) return;
+    update({ referenceImageUrls: [...refList, url], referenceImageUrl: "" });
+  }
+  function removeRef(url: string) {
+    update({ referenceImageUrls: refList.filter((u) => u !== url), referenceImageUrl: "" });
   }
 
   // 选图槽（首/尾/参考）扫画布上已出图的图片卡；选源视频槽扫已出片的视频卡
@@ -250,7 +279,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
 
   // config 态点「生成视频」：提交后状态机和图生视频完全同一条管线（轮询防御全部复用）
   // 当前处于哪种模式：源视频 > 参考图 > 首尾帧（互斥，UI 也会互斥）
-  const hasInput = !!(firstImageUrl || referenceImageUrl || sourceVideoUrl);
+  const hasInput = !!(firstImageUrl || refList.length || sourceVideoUrl);
 
   async function startGenerate() {
     if (busy || !hasInput) return;
@@ -260,9 +289,15 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     try {
       // 参考图必须先入素材库换成 asset://（零克云只认这种形式，裸 URL 会被丢弃）。
       // 已经是 asset:// 的就不重复入库。
-      let refForSubmit = referenceImageUrl || "";
-      if (refForSubmit && !refForSubmit.startsWith("asset://")) {
-        refForSubmit = await uploadAsset(refForSubmit, "Image");
+      // 多参考图：逐张入素材库换 asset://（裸 URL 会被丢弃）。已是 asset:// 的跳过。
+      const refsForSubmit: string[] = [];
+      for (const u of refList) {
+        if (!u) continue;
+        if (u.startsWith("asset://")) {
+          refsForSubmit.push(u);
+        } else {
+          refsForSubmit.push(await uploadAsset(u, "Image"));
+        }
       }
       // 源视频(remix)同样走素材库换 asset://（Video 类型），裸 URL 会被丢弃
       let srcVideoForSubmit = sourceVideoUrl || "";
@@ -272,12 +307,19 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       // 上传图(base64)提交前再压缩，避免请求体过大导致 504
       const firstForSubmit = await shrinkDataUrl(firstImageUrl || "");
       const lastForSubmit = await shrinkDataUrl(lastImageUrl || "");
+      // 多图编号注入：>1 张时，在提示词前加「参考图片编号：图片1、图片2…」，
+      // 让模型能按编号理解提示词里的图片引用（借鉴 infinite-canvas）。
+      let promptForSubmit = (prompt || "").trim() || "让画面自然地动起来，保持主体稳定、镜头平滑";
+      if (refsForSubmit.length > 1) {
+        const labels = refsForSubmit.map((_, i) => `图片${i + 1}`).join("、");
+        promptForSubmit = `参考图片编号：${labels}。请按这些编号理解提示词中的图片引用。\n\n${promptForSubmit}`;
+      }
       const newTaskId = await submitVideo({
         firstImageUrl: firstForSubmit || undefined,
         lastImageUrl: lastForSubmit || undefined,
-        referenceImageUrl: refForSubmit || undefined,
+        referenceImageUrls: refsForSubmit.length ? refsForSubmit : undefined,
         sourceVideoUrl: srcVideoForSubmit || undefined,
-        prompt: (prompt || "").trim() || "让画面自然地动起来，保持主体稳定、镜头平滑",
+        prompt: promptForSubmit,
         model,
         resolution,
         duration,
@@ -851,14 +893,93 @@ function VideoCard({ shape }: { shape: VideoShape }) {
 
             {/* 参考图模式：真人照片 / 角色一致性 */}
             {mode === "ref" && (
-              <div style={{ display: "flex", gap: 8 }}>
-                <FrameSlot
-                  label="参考图（角色/物体一致性）"
-                  url={referenceImageUrl}
-                  active={picking === "ref"}
-                  onPick={() => setPicking(picking === "ref" ? null : "ref")}
-                  onClear={() => update({ referenceImageUrl: "" })}
-                />
+              <div>
+                <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>
+                  参考图（角色/物体/场景一致性，最多 {MAX_REF} 张）
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {refList.map((u) => (
+                    <div
+                      key={u}
+                      style={{
+                        position: "relative",
+                        width: 60,
+                        height: 60,
+                        flex: "0 0 auto",
+                      }}
+                    >
+                      <img
+                        src={u}
+                        alt=""
+                        style={{
+                          width: 60,
+                          height: 60,
+                          objectFit: "cover",
+                          borderRadius: 8,
+                          border: `1px solid ${TOKENS.border}`,
+                        }}
+                      />
+                      <button
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeRef(u);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          border: "none",
+                          background: "rgba(15,17,21,0.78)",
+                          color: "#fff",
+                          fontSize: 11,
+                          lineHeight: "18px",
+                          cursor: "pointer",
+                          padding: 0,
+                          pointerEvents: "all",
+                        }}
+                        title="移除"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {refList.length < MAX_REF && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPicking(picking === "ref" ? null : "ref");
+                      }}
+                      style={{
+                        width: 60,
+                        height: 60,
+                        flex: "0 0 auto",
+                        borderRadius: 8,
+                        border: `2px ${picking === "ref" ? "solid" : "dashed"} ${
+                          picking === "ref" ? TOKENS.video : "#cbd5e1"
+                        }`,
+                        background: "#f8fafc",
+                        color: picking === "ref" ? TOKENS.video : "#94a3b8",
+                        fontSize: 22,
+                        cursor: "pointer",
+                        pointerEvents: "all",
+                        lineHeight: 1,
+                      }}
+                      title="添加参考图"
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+                {refList.length > 1 && (
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>
+                    提交时会自动按「图片1、图片2…」编号，可在提示词里按编号引用
+                  </div>
+                )}
               </div>
             )}
 
@@ -998,8 +1119,10 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                           update({ lastImageUrl: img.url });
                           connectFrame(img.id as string);
                         } else if (picking === "ref") {
-                          update({ referenceImageUrl: img.url });
+                          addRef(img.url);
                           connectFrame(img.id as string);
+                          // 参考图可连选多张：不关闭选择器
+                          return;
                         }
                         setPicking(null);
                       }}
@@ -1095,6 +1218,7 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
     firstImageUrl: T.string,
     lastImageUrl: T.string,
     referenceImageUrl: T.string,
+    referenceImageUrls: T.arrayOf(T.string),
     sourceVideoUrl: T.string,
     resolution: T.string,
     duration: T.string,
@@ -1118,6 +1242,7 @@ export class VideoShapeUtil extends BaseBoxShapeUtil<VideoShape> {
       firstImageUrl: "",
       lastImageUrl: "",
       referenceImageUrl: "",
+      referenceImageUrls: [],
       sourceVideoUrl: "",
       resolution: "720p",
       duration: "5",
