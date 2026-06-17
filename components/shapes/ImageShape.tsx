@@ -4,7 +4,7 @@ import { useState } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
-import { submitVideo, optimizePrompt } from "@/lib/maas";
+import { submitVideo, optimizePrompt, describeImage } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import { TOKENS, cardShell, labelStyle, nameInputStyle, outerNameRowStyle, outerNameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
