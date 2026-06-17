@@ -8,6 +8,34 @@ function cleanBase(b) {
   return s;
 }
 
+// 把图片（火山临时 URL 或 base64）转存到 ImgBB，拿永久公网 URL。
+// 火山 TOS 的签名 URL 24 小时过期，转存后永不过期，后续参考图/首尾帧/remix 才不会 403。
+// 失败时返回原 URL（降级，不阻断生成）。
+async function rehostToImgbb(imageUrlOrB64) {
+  const KEY = (process.env.IMGBB_API_KEY || "").trim();
+  if (!KEY) return imageUrlOrB64; // 没配 key 就不转存，用原图
+  try {
+    // ImgBB 的 image 参数：可以是图片 URL，也可以是纯 base64（去掉 data: 前缀）。
+    let imageParam = imageUrlOrB64;
+    const m = /^data:image\/[^;]+;base64,(.+)$/.exec(imageUrlOrB64 || "");
+    if (m) imageParam = m[1]; // base64：去掉 data 前缀
+    // 若是 http URL，ImgBB 支持直接传 URL 让它去拉
+    const form = new URLSearchParams();
+    form.append("image", imageParam);
+    const resp = await fetch(`https://api.imgbb.com/1/upload?key=${KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    const j = await resp.json().catch(() => null);
+    const permanent = j && j.data && (j.data.url || j.data.display_url);
+    if (resp.ok && permanent) return permanent;
+    return imageUrlOrB64; // 转存失败，降级用原图
+  } catch {
+    return imageUrlOrB64; // 网络异常，降级用原图
+  }
+}
+
 // 文件名以 -background 结尾 → Netlify 后台函数：调用方立刻收到 202，函数体在后台最多跑 15 分钟。
 // 用途：Seedream 5.0 在 2K/4K 档生成时长远超普通函数 10~26 秒上限（之前的 504 就是这么来的）。
 export default async (req) => {
@@ -70,7 +98,9 @@ export default async (req) => {
       return new Response("ok");
     }
     const imageUrl = String(raw).startsWith("http") ? raw : `data:image/png;base64,${raw}`;
-    await write({ status: "done", imageUrl });
+    // 转存到 ImgBB 拿永久 URL（火山 URL 24h 过期，转存后参考图/首尾帧/remix 才不会 403）
+    const permanentUrl = await rehostToImgbb(imageUrl);
+    await write({ status: "done", imageUrl: permanentUrl });
   } catch (e) {
     await write({ status: "error", error: String((e && e.message) || e) });
   }
