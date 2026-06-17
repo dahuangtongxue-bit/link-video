@@ -83,6 +83,34 @@ export const nameInputStyle: CSSProperties = {
   minWidth: 0,
 };
 
+// 卡外名称行容器：绝对定位到卡片左上角外侧（卡片上方），不占用卡内空间
+export const outerNameRowStyle: CSSProperties = {
+  position: "absolute",
+  top: -26,
+  left: 2,
+  right: 2,
+  height: 22,
+  display: "flex",
+  alignItems: "center",
+  pointerEvents: "none", // 容器不挡，内部 input 单独开 all
+};
+
+// 卡外名称输入框：透明、像标题，聚焦/悬停时给个浅底
+export const outerNameInputStyle: CSSProperties = {
+  pointerEvents: "all",
+  border: "1px solid transparent",
+  borderRadius: 6,
+  padding: "1px 6px",
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: TOKENS.sans,
+  color: TOKENS.ink,
+  background: "transparent",
+  outline: "none",
+  maxWidth: "100%",
+  minWidth: 60,
+};
+
 export const selectStyle: CSSProperties = {
   pointerEvents: "all",
   appearance: "none",
