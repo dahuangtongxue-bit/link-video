@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
     firstImageUrl,
     lastImageUrl,
     referenceImageUrl,
+    referenceImageUrls,
     sourceVideoUrl,
     prompt,
     model,
@@ -25,15 +26,20 @@ export async function POST(req: NextRequest) {
 
   const firstUrl = firstImageUrl || imageUrl || "";
   const lastUrl = lastImageUrl || "";
-  const refImg = referenceImageUrl || "";
+  // 多参考图：优先用数组，兼容旧单字段
+  const refImgs: string[] = Array.isArray(referenceImageUrls)
+    ? referenceImageUrls.filter((u: any) => typeof u === "string" && u)
+    : referenceImageUrl
+    ? [referenceImageUrl]
+    : [];
   const srcVideo = sourceVideoUrl || "";
 
-  if (!firstUrl && !refImg && !srcVideo) {
+  if (!firstUrl && !refImgs.length && !srcVideo) {
     return NextResponse.json({ error: "缺少图片或视频输入" }, { status: 400 });
   }
 
   // 混用规则（文档：reference_image 不能与 first/last 同时；尾帧必须配首帧）
-  if (refImg && (firstUrl || lastUrl)) {
+  if (refImgs.length && (firstUrl || lastUrl)) {
     return NextResponse.json(
       { error: "参考图不能与首帧/尾帧同时使用" },
       { status: 400 }
@@ -45,7 +51,7 @@ export async function POST(req: NextRequest) {
 
   // base64 防线：零克云只接受公网 URL / asset://，base64 会被丢弃退化成文生视频。
   // 首尾帧理论上也只认 URL；这里对超大 base64 直接拦下避免请求体过大。
-  for (const u of [firstUrl, lastUrl, refImg]) {
+  for (const u of [firstUrl, lastUrl, ...refImgs]) {
     if (typeof u === "string" && u.startsWith("data:") && u.length > TOO_BIG) {
       return NextResponse.json(
         { error: "图片过大。请删除后重新上传（会自动压缩）" },
@@ -74,8 +80,10 @@ export async function POST(req: NextRequest) {
     if (srcVideo) {
       content.push({ type: "video_url", video_url: { url: srcVideo }, role: "reference_video" });
     }
-    if (refImg) {
-      content.push({ type: "image_url", image_url: { url: refImg }, role: "reference_image" });
+    if (refImgs.length) {
+      for (const u of refImgs) {
+        content.push({ type: "image_url", image_url: { url: u }, role: "reference_image" });
+      }
     }
     if (firstUrl) {
       content.push({ type: "image_url", image_url: { url: firstUrl }, role: "first_frame" });
