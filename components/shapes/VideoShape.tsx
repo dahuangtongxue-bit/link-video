@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
+import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { VideoShape } from "@/lib/types";
 import { pollVideoUntilDone, submitVideo, optimizePrompt, uploadAsset } from "@/lib/maas";
 import { VIDEO_MODELS } from "@/lib/models";
@@ -262,7 +262,12 @@ function VideoCard({ shape }: { shape: VideoShape }) {
       // 已经是 asset:// 的就不重复入库。
       let refForSubmit = referenceImageUrl || "";
       if (refForSubmit && !refForSubmit.startsWith("asset://")) {
-        refForSubmit = await uploadAsset(refForSubmit);
+        refForSubmit = await uploadAsset(refForSubmit, "Image");
+      }
+      // 源视频(remix)同样走素材库换 asset://（Video 类型），裸 URL 会被丢弃
+      let srcVideoForSubmit = sourceVideoUrl || "";
+      if (srcVideoForSubmit && !srcVideoForSubmit.startsWith("asset://")) {
+        srcVideoForSubmit = await uploadAsset(srcVideoForSubmit, "Video");
       }
       // 上传图(base64)提交前再压缩，避免请求体过大导致 504
       const firstForSubmit = await shrinkDataUrl(firstImageUrl || "");
@@ -271,7 +276,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
         firstImageUrl: firstForSubmit || undefined,
         lastImageUrl: lastForSubmit || undefined,
         referenceImageUrl: refForSubmit || undefined,
-        sourceVideoUrl: sourceVideoUrl || undefined,
+        sourceVideoUrl: srcVideoForSubmit || undefined,
         prompt: (prompt || "").trim() || "让画面自然地动起来，保持主体稳定、镜头平滑",
         model,
         resolution,
@@ -482,6 +487,30 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                   />
                 </div>
               )}
+              {/* 停止：退回配置态，可改参数重来。注意：后端任务可能已在跑/已扣费，停止只停前端轮询 */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!confirm("停止本次生成？\n若任务已在后端运行可能仍会扣费，停止仅结束本卡的等待，可重新配置。")) return;
+                  update({ status: "config", error: "", taskId: "", progress: 0 });
+                  setBusy(false);
+                }}
+                style={{
+                  marginTop: 14,
+                  height: 28,
+                  padding: "0 16px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  background: "rgba(255,255,255,0.08)",
+                  color: "#e2e8f0",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  pointerEvents: "all",
+                }}
+              >
+                停止
+              </button>
             </div>
           )}
           {status === "error" && (
@@ -618,7 +647,24 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                     onClick={(e) => {
                       e.stopPropagation();
                       setMenuOpen(false);
-                      alert("当前版本暂无法生成。可用：首尾帧、图生视频、文生视频。");
+                      if (!videoUrl) return;
+                      // 在当前卡右侧新建一个「续/编辑」视频卡，源视频填当前视频
+                      const me = editor.getShape(shapeId);
+                      const bounds = editor.getShapePageBounds(shapeId);
+                      const nx = bounds ? bounds.x + bounds.w + 60 : (me as any)?.x + 400 || 0;
+                      const ny = bounds ? bounds.y : (me as any)?.y || 0;
+                      const newId = createShapeId();
+                      editor.createShape({
+                        id: newId,
+                        type: "video-card",
+                        x: nx,
+                        y: ny,
+                        props: {
+                          status: "config",
+                          sourceVideoUrl: videoUrl,
+                        },
+                      });
+                      editor.select(newId);
                     }}
                     style={{
                       display: "block",
@@ -627,14 +673,38 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                       padding: "9px 12px",
                       border: "none",
                       background: "#fff",
-                      color: "#b0b6c0",
+                      color: "#475569",
                       fontSize: 12,
-                      cursor: "not-allowed",
+                      cursor: "pointer",
                       pointerEvents: "all",
                     }}
-                    title="平台暂未支持，敬请期待"
+                    title="基于这条视频续编辑/再生成"
                   >
-                    🎬 Remix 这条视频 *
+                    🎬 Remix 这条视频
+                  </button>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      // 把本卡提到最上层，解决多卡重叠时点不中的问题
+                      editor.bringToFront([shapeId]);
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "9px 12px",
+                      border: "none",
+                      borderTop: `1px solid ${TOKENS.border}`,
+                      background: "#fff",
+                      color: "#475569",
+                      fontSize: 12,
+                      cursor: "pointer",
+                      pointerEvents: "all",
+                    }}
+                  >
+                    ⬆ 置于顶层
                   </button>
                   <button
                     onPointerDown={(e) => e.stopPropagation()}
@@ -721,7 +791,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
               {([
                 ["frames", "首尾帧", false],
                 ["ref", "参考图", false],
-                ["srcvideo", "续/编辑", true],
+                ["srcvideo", "续/编辑", false],
               ] as const).map(([m, label, disabled]) => (
                 <button
                   key={m}
