@@ -229,7 +229,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             <img
               src={imageUrl}
               alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
               draggable={false}
             />
           )}
@@ -238,7 +238,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             <img
               src={imageUrl}
               alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
               draggable={false}
             />
           )}
