@@ -69,7 +69,17 @@ function ImageCard({ shape }: { shape: ImageShape }) {
     const tick = () => {
       try {
         const ids = editor.getSelectedShapeIds?.() ?? editor.getSelectedShapes().map((x: any) => x.id);
-        setSelected(ids.includes(shape.id));
+        const isSel = ids.includes(shape.id);
+        setSelected(isSel);
+        // 卡片高度跟着展开/收起走：收起=只有图片区(=w)，展开=图片区+控制区
+        const cur = editor.getShape(shape.id) as any;
+        if (cur && cur.type === "image-card") {
+          const imgH = cur.props.w; // 图片区高 = 卡片宽
+          const wantH = isSel ? imgH + 236 : imgH;
+          if (Math.abs((cur.props.h || 0) - wantH) > 1) {
+            editor.updateShape({ id: shape.id, type: "image-card", props: { h: wantH } });
+          }
+        }
       } catch {}
       raf = requestAnimationFrame(tick);
     };
@@ -178,10 +188,11 @@ function ImageCard({ shape }: { shape: ImageShape }) {
           />
         </div>
         <div style={cardShell(TOKENS.image, w, h)}>
-        {/* 图片区 */}
+        {/* 图片区：固定高度（=卡片宽度），图片 contain 居中，不随控制区展开/收起跳动 */}
         <div
           style={{
-            flex: 1,
+            height: w,
+            flex: "0 0 auto",
             background: "#f3f4f6",
             display: "flex",
             alignItems: "center",
