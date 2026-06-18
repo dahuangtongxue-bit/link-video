@@ -182,6 +182,7 @@ export default function Canvas() {
         style={{
           height: 52,
           flexShrink: 0,
+          position: "relative",
           background: "#0f1115",
           color: "#fff",
           display: "flex",
@@ -204,8 +205,18 @@ export default function Canvas() {
         >
           文字 → 图片 → 视频
         </span>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {/* 按钮组绝对定位到顶栏正中央，以屏幕中线为准，不受左侧 logo 宽度影响 */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+          }}
+        >
           <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
             + 文生图片
           </button>
@@ -216,7 +227,6 @@ export default function Canvas() {
             + 生成视频
           </button>
         </div>
-        <div style={{ flex: 1 }} />
         <input
           ref={fileRef}
           type="file"
