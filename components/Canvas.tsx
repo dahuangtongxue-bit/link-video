@@ -12,7 +12,6 @@ import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
 import TaskPanel from "./TaskPanel";
-import SelectionToolbar from "./SelectionToolbar";
 import BottomToolbar from "./BottomToolbar";
 import { rehostImage } from "@/lib/maas";
 
@@ -22,7 +21,6 @@ const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
 function CanvasOverlay() {
   return (
     <>
-      <SelectionToolbar />
       <BottomToolbar />
       <TaskPanel />
     </>
