@@ -3,10 +3,6 @@
 import { useRef, useState, useCallback } from "react";
 import {
   Tldraw,
-  DefaultToolbar,
-  TldrawUiMenuItem,
-  useIsToolSelected,
-  useTools,
   type Editor,
   type TLComponents,
   createShapeId,
@@ -17,28 +13,17 @@ import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
 import TaskPanel from "./TaskPanel";
 import SelectionToolbar from "./SelectionToolbar";
+import BottomToolbar from "./BottomToolbar";
 import { rehostImage } from "@/lib/maas";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
-
-// 底部工具栏只留「选择 + 抓手」两个工具，其余画笔/橡皮/文字等全部收掉
-function MinimalToolbar() {
-  const tools = useTools();
-  const isSelect = useIsToolSelected(tools["select"]);
-  const isHand = useIsToolSelected(tools["hand"]);
-  return (
-    <DefaultToolbar>
-      <TldrawUiMenuItem {...tools["select"]} isSelected={isSelect} />
-      <TldrawUiMenuItem {...tools["hand"]} isSelected={isHand} />
-    </DefaultToolbar>
-  );
-}
 
 // InFrontOfTheCanvas 只能挂一个组件，这里把「任务记录面板」和「选中浮动工具条」合并
 function CanvasOverlay() {
   return (
     <>
       <SelectionToolbar />
+      <BottomToolbar />
       <TaskPanel />
     </>
   );
@@ -48,7 +33,7 @@ function CanvasOverlay() {
 const components: TLComponents = {
   MenuPanel: null,
   StylePanel: null,
-  Toolbar: MinimalToolbar,
+  Toolbar: null,
   InFrontOfTheCanvas: CanvasOverlay,
 };
 
@@ -222,15 +207,18 @@ export default function Canvas() {
           文字 → 图片 → 视频
         </span>
         <div style={{ flex: 1 }} />
-        <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
-          + 文生图片
-        </button>
-        <button onClick={() => fileRef.current?.click()} disabled={!ready} style={barBtn("#10b981", ready)}>
-          + 上传图片
-        </button>
-        <button onClick={addVideoCard} disabled={!ready} style={barBtn("#8b5cf6", ready)}>
-          + 生成视频
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
+            + 文生图片
+          </button>
+          <button onClick={() => fileRef.current?.click()} disabled={!ready} style={barBtn("#10b981", ready)}>
+            + 上传图片
+          </button>
+          <button onClick={addVideoCard} disabled={!ready} style={barBtn("#8b5cf6", ready)}>
+            + 生成视频
+          </button>
+        </div>
+        <div style={{ flex: 1 }} />
         <input
           ref={fileRef}
           type="file"
