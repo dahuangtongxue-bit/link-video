@@ -11,10 +11,7 @@ export default function SelectionToolbar() {
   const [dbg, setDbg] = useState("init");
 
   useEffect(() => {
-    if (!editor) {
-      setDbg("no editor");
-      return;
-    }
+    if (!editor) { setDbg("no editor"); return; }
     let raf = 0;
     const tick = () => {
       const sel = editor.getSelectedShapes();
@@ -22,20 +19,11 @@ export default function SelectionToolbar() {
         const sh = sel[0] as any;
         const b = editor.getShapePageBounds(sh.id);
         if (b) {
-          const cam = editor.getCamera();
-          const z = cam.z || 1;
-          const left = (b.x + b.w / 2 - cam.x) * z;
-          const top = (b.y - cam.y) * z;
-          setState({ left, top, id: sh.id as string });
-          setDbg(`OK id=${String(sh.id).slice(0, 12)} L=${Math.round(left)} T=${Math.round(top)} z=${z.toFixed(2)}`);
-        } else {
-          setState(null);
-          setDbg("no bounds");
-        }
-      } else {
-        setState(null);
-        setDbg(`sel=${sel.length} types=${sel.map((s: any) => s.type).join(",")}`);
-      }
+          const tc = editor.pageToScreen({ x: b.x + b.w / 2, y: b.y });
+          setState({ left: tc.x, top: tc.y, id: sh.id as string });
+          setDbg(`OK L=${Math.round(tc.x)} T=${Math.round(tc.y)}`);
+        } else { setState(null); setDbg("no bounds"); }
+      } else { setState(null); setDbg(`sel=${sel.length}`); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -46,52 +34,47 @@ export default function SelectionToolbar() {
   const toFront = () => state && editor.bringToFront([state.id as any]);
   const del = () => state && editor.deleteShapes([state.id as any]);
 
-  const btn = (label: string, onClick: () => void, danger = false) => (
-    <button
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      style={{
-        height: 30, padding: "0 12px", border: "none", background: "transparent",
-        color: danger ? "#fca5a5" : "#e5e7eb", fontSize: 12, fontWeight: 600,
-        cursor: "pointer", pointerEvents: "all", whiteSpace: "nowrap",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
-      {label}
-    </button>
+  const btnStyle = (danger = false): React.CSSProperties => ({
+    height: 30, padding: "0 12px", border: "none", background: "transparent",
+    color: danger ? "#fca5a5" : "#e5e7eb", fontSize: 12, fontWeight: 600,
+    cursor: "pointer", pointerEvents: "all", whiteSpace: "nowrap", fontFamily: "system-ui, sans-serif",
+  });
+
+  const bar = (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 2, padding: "0 6px", height: 38,
+      borderRadius: 10, background: "rgba(15,17,21,0.92)",
+      boxShadow: "0 6px 20px rgba(15,17,21,0.28)", pointerEvents: "all", whiteSpace: "nowrap",
+    }}>
+      <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();dup();}} style={btnStyle()}>⧉ 复制</button>
+      <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.18)" }} />
+      <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();toFront();}} style={btnStyle()}>⬆ 置顶</button>
+      <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.18)" }} />
+      <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation();del();}} style={btnStyle(true)}>🗑 删除</button>
+    </div>
   );
-  const sep = () => <div style={{ width: 1, height: 16, background: "rgba(255,255,255,0.18)" }} />;
 
   return (
     <>
-      {/* 调试块：常驻左上，显示 state 实时情况 */}
-      <div style={{
-        position: "absolute", left: 20, top: 80, zIndex: 99999,
-        background: state ? "green" : "orange", color: "white",
-        padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-        pointerEvents: "none", fontFamily: "system-ui, sans-serif",
-      }}>
-        {state ? "条应显示" : "条隐藏"} · {dbg}
+      {/* 调试区：常驻左上。绿块下方直接内联渲染工具条 → 验证 bar 能否渲染（不依赖坐标）*/}
+      <div style={{ position: "absolute", left: 20, top: 80, zIndex: 99999, pointerEvents: "all" }}>
+        <div style={{
+          background: state ? "green" : "orange", color: "white", padding: "6px 12px",
+          borderRadius: 8, fontSize: 12, fontWeight: 700, marginBottom: 8,
+          fontFamily: "system-ui, sans-serif", display: "inline-block",
+        }}>
+          {dbg}（下方应有深色条↓）
+        </div>
+        <div>{bar}</div>
       </div>
 
-      {/* 真工具条 */}
+      {/* 跟随卡片的工具条 */}
       {state && (
         <div style={{
           position: "absolute", left: state.left, top: state.top,
-          transform: "translate(-50%, calc(-100% - 12px))",
-          display: "flex", alignItems: "center", gap: 2, padding: "0 6px", height: 38,
-          borderRadius: 10, background: "rgba(15,17,21,0.92)",
-          boxShadow: "0 6px 20px rgba(15,17,21,0.28)", backdropFilter: "blur(8px)",
-          pointerEvents: "all", zIndex: 99999, whiteSpace: "nowrap",
+          transform: "translate(-50%, calc(-100% - 12px))", zIndex: 99999, pointerEvents: "all",
         }}>
-          {btn("⧉ 复制", dup)}
-          {sep()}
-          {btn("⬆ 置顶", toFront)}
-          {sep()}
-          {btn("🗑 删除", del, true)}
+          {bar}
         </div>
       )}
     </>
