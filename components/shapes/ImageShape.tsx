@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ImageShape } from "@/lib/types";
 import { VIDEO_MODELS } from "@/lib/models";
@@ -61,6 +61,21 @@ function ImageCard({ shape }: { shape: ImageShape }) {
   const [revBusy, setRevBusy] = useState(false);
   // 运动提示文本框：默认收起，点击展开（有内容时默认展开）
   const [motionOpen, setMotionOpen] = useState(false);
+  // 是否选中本卡：选中才展开下方控制区，平时收起让卡片清爽
+  const [selected, setSelected] = useState(false);
+  useEffect(() => {
+    if (!editor) return;
+    let raf = 0;
+    const tick = () => {
+      try {
+        const ids = editor.getSelectedShapeIds?.() ?? editor.getSelectedShapes().map((x: any) => x.id);
+        setSelected(ids.includes(shape.id));
+      } catch {}
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [editor, shape.id]);
 
   async function handleOptimize() {
     const text = (motion || "").trim();
@@ -229,7 +244,8 @@ function ImageCard({ shape }: { shape: ImageShape }) {
           )}
         </div>
 
-        {/* 控制区：图生视频 */}
+        {/* 控制区：图生视频 —— 仅选中卡片时展开 */}
+        {selected && (
         <div
           style={{
             padding: 10,
@@ -390,6 +406,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             </button>
           </div>
         </div>
+        )}
         </div>
       </div>
     </HTMLContainer>
