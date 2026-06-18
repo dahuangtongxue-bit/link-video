@@ -4,41 +4,52 @@ import { useEffect, useState } from "react";
 import { useEditor } from "tldraw";
 
 // 选中卡片时，在卡片顶部上方浮现一排操作按钮（复制 / 置顶 / 删除）。
-// 不选中时不显示，保持画面干净。只在选中「单个」我们的卡片时出现。
-// 放在 InFrontOfTheCanvas 中：处于画布坐标系，按页面坐标定位，会自动跟随平移/缩放。
+// 不选中时不显示。
+// 用轻量轮询读取选中/相机状态（最稳，不依赖特定响应式 API）。
+// InFrontOfTheCanvas 处于屏幕坐标系，所以用相机把页面坐标换算成屏幕坐标。
 
 const OUR_TYPES = new Set(["prompt-card", "image-card", "video-card"]);
 
+type Box = { left: number; top: number };
+
 export default function SelectionToolbar() {
   const editor = useEditor();
-  const [tick, setTick] = useState(0);
+  const [pos, setPos] = useState<Box | null>(null);
+  const [shapeId, setShapeId] = useState<string | null>(null);
 
-  // 任何 document/相机/选中变化都重渲染，保证浮条位置实时跟随
   useEffect(() => {
-    const rerender = () => setTick((n) => (n + 1) % 1_000_000);
-    const unsub = editor.store.listen(rerender, { source: "all", scope: "all" });
-    return () => unsub();
+    if (!editor) return;
+    let raf = 0;
+    const tick = () => {
+      const selected = editor.getSelectedShapes();
+      if (selected.length === 1 && OUR_TYPES.has((selected[0] as any).type)) {
+        const sh = selected[0] as any;
+        const b = editor.getShapePageBounds(sh.id);
+        if (b) {
+          const cam = editor.getCamera();
+          const z = cam.z;
+          setPos({
+            left: (b.x + b.w / 2 - cam.x) * z,
+            top: (b.y - cam.y) * z,
+          });
+          setShapeId(sh.id as string);
+          raf = requestAnimationFrame(tick);
+          return;
+        }
+      }
+      setPos(null);
+      setShapeId(null);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [editor]);
-  void tick;
 
-  const selected = editor.getSelectedShapes();
-  if (selected.length !== 1) return null;
-  const shape = selected[0] as any;
-  if (!OUR_TYPES.has(shape.type)) return null;
+  if (!pos || !shapeId) return null;
 
-  const bounds = editor.getShapePageBounds(shape.id);
-  if (!bounds) return null;
-
-  // InFrontOfTheCanvas 处于「屏幕坐标系」（不在画布 transform 层内），
-  // 所以要把卡片的页面坐标换算成屏幕坐标：screen = (page - camera) * zoom
-  const cam = editor.getCamera();
-  const z = cam.z;
-  const screenX = (bounds.x + bounds.w / 2 - cam.x) * z;
-  const screenTop = (bounds.y - cam.y) * z;
-
-  const dup = () => editor.duplicateShapes([shape.id], { x: 40, y: 40 });
-  const toFront = () => editor.bringToFront([shape.id]);
-  const del = () => editor.deleteShapes([shape.id]);
+  const dup = () => editor.duplicateShapes([shapeId as any], { x: 40, y: 40 });
+  const toFront = () => editor.bringToFront([shapeId as any]);
+  const del = () => editor.deleteShapes([shapeId as any]);
 
   const btn = (label: string, onClick: () => void, danger = false) => (
     <button
@@ -73,8 +84,8 @@ export default function SelectionToolbar() {
     <div
       style={{
         position: "absolute",
-        left: screenX,
-        top: screenTop,
+        left: pos.left,
+        top: pos.top,
         transform: "translate(-50%, calc(-100% - 10px))",
         display: "flex",
         alignItems: "center",
