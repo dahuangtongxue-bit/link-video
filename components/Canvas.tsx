@@ -11,18 +11,18 @@ import "tldraw/tldraw.css";
 import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
-import TaskPanel from "./TaskPanel";
+import ChatPanel from "./ChatPanel";
 import BottomToolbar from "./BottomToolbar";
 import { rehostImage } from "@/lib/maas";
 
 const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
 
-// InFrontOfTheCanvas 只能挂一个组件，这里把「任务记录面板」和「选中浮动工具条」合并
+// InFrontOfTheCanvas 只能挂一个组件，这里把「底部工具栏」和「画布助手」合并
 function CanvasOverlay() {
   return (
     <>
       <BottomToolbar />
-      <TaskPanel />
+      <ChatPanel />
     </>
   );
 }
