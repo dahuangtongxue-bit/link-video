@@ -69,7 +69,16 @@ function ImageCard({ shape }: { shape: ImageShape }) {
     const tick = () => {
       try {
         const ids = editor.getSelectedShapeIds?.() ?? editor.getSelectedShapes().map((x: any) => x.id);
-        setSelected(ids.includes(shape.id));
+        const isSel = ids.includes(shape.id);
+        setSelected(isSel);
+        // 同步 props.h 给 tldraw 做选框/连线几何（渲染已自适应，不依赖它）
+        const cur = editor.getShape(shape.id) as any;
+        if (cur && cur.type === "image-card") {
+          const wantH = isSel ? cur.props.w + 250 : cur.props.w;
+          if (Math.abs((cur.props.h || 0) - wantH) > 2) {
+            editor.updateShape({ id: shape.id, type: "image-card", props: { h: wantH } });
+          }
+        }
       } catch {}
       raf = requestAnimationFrame(tick);
     };
@@ -167,7 +176,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
 
   return (
     <HTMLContainer>
-      <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
+      <div style={{ position: "relative", width: w, height: "auto", overflow: "visible" }}>
         <div style={outerNameRowStyle}>
           <input
             style={outerNameInputStyle}
@@ -177,18 +186,18 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             onChange={(e) => update({ name: e.target.value })}
           />
         </div>
-        <div style={cardShell(TOKENS.image, w, h)}>
-        {/* 图片区：固定高度（=卡片宽度），图片 contain 居中，不随控制区展开/收起跳动 */}
+        <div style={{ ...cardShell(TOKENS.image, w, h), height: "auto" }}>
+        {/* 图片区：固定高度=卡片宽（正方形），不用 flex:1 抢空间，控制区显隐不影响它 */}
         <div
           style={{
+            width: "100%",
             height: w,
-            flex: "0 0 auto",
+            flexShrink: 0,
             background: "#f3f4f6",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
-            minHeight: 0,
           }}
         >
           {status === "generating" && (
@@ -230,7 +239,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             <img
               src={imageUrl}
               alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
               draggable={false}
             />
           )}
@@ -239,7 +248,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             <img
               src={imageUrl}
               alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
               draggable={false}
             />
           )}
