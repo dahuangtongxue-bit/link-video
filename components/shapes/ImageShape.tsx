@@ -69,17 +69,7 @@ function ImageCard({ shape }: { shape: ImageShape }) {
     const tick = () => {
       try {
         const ids = editor.getSelectedShapeIds?.() ?? editor.getSelectedShapes().map((x: any) => x.id);
-        const isSel = ids.includes(shape.id);
-        setSelected(isSel);
-        // 卡片高度跟着展开/收起走：收起=只有图片区(=w)，展开=图片区+控制区
-        const cur = editor.getShape(shape.id) as any;
-        if (cur && cur.type === "image-card") {
-          const imgH = cur.props.w; // 图片区高 = 卡片宽
-          const wantH = isSel ? imgH + 236 : imgH;
-          if (Math.abs((cur.props.h || 0) - wantH) > 1) {
-            editor.updateShape({ id: shape.id, type: "image-card", props: { h: wantH } });
-          }
-        }
+        setSelected(ids.includes(shape.id));
       } catch {}
       raf = requestAnimationFrame(tick);
     };
