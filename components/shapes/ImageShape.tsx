@@ -243,15 +243,6 @@ function ImageCard({ shape }: { shape: ImageShape }) {
               draggable={false}
             />
           )}
-          {status === "done" && imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageUrl}
-              alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              draggable={false}
-            />
-          )}
         </div>
 
         {/* 控制区：图生视频 —— 仅选中卡片时展开 */}
