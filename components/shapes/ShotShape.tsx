@@ -291,7 +291,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
             {/* 第一阶段：生参考帧 */}
             <div style={{ display: "flex", gap: 6 }}>
               {knob(imageModel, IMAGE_MODELS.map((m) => ({ v: m.id, label: m.label.replace("豆包图像 · ", "") })), (v) => update({ imageModel: v }))}
-              {knob(size, IMAGE_SIZES, (v) => update({ size: v }))}
+              {knob(size, IMAGE_SIZES.map((s) => ({ v: s.id, label: s.label })), (v) => update({ size: v }))}
             </div>
             <button
               style={{ ...primaryBtn(SHOT, busy === "frame"), width: "100%" }}
