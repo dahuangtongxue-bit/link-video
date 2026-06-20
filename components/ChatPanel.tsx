@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useEditor, createShapeId } from "tldraw";
-import { generateImage, getAccessKey } from "@/lib/maas";
-import { IMAGE_MODELS } from "@/lib/models";
+import { generateImage, submitVideo, getAccessKey } from "@/lib/maas";
+import { IMAGE_MODELS, VIDEO_MODELS } from "@/lib/models";
 
 // 画布助手：右侧驾驶舱。一条统一时间线 —— 你说的话、助手的回应、
 // 以及画布上所有任务（图片 / 视频）的实时进度，都按时间流在这里。
@@ -13,6 +13,8 @@ import { IMAGE_MODELS } from "@/lib/models";
 
 const IMG_MODEL = IMAGE_MODELS[0]?.id || "doubao-seedream-5-0-260128";
 const IMG_SIZE = "2K";
+const VID_MODEL = VIDEO_MODELS[0]?.id || "doubao-seedance-2-0-260128";
+const VID_MODEL_FAST = VIDEO_MODELS[1]?.id || VID_MODEL;
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   config: { text: "待生成", color: "#94a3b8" },
@@ -36,6 +38,7 @@ export default function ChatPanel() {
   const [copied, setCopied] = useState<string | null>(null);
   const seenRef = useRef<Record<string, number>>({}); // 视频卡首次出现时间，用于排序
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const placeRef = useRef(0); // 新建卡片落点的错位计数，避免叠在一起
 
   // 订阅画布 store：任何卡片状态变了都刷新（任务进度实时跟手）
   useEffect(() => {
@@ -60,9 +63,11 @@ export default function ChatPanel() {
     ]);
   }
 
-  function centerOffset(i: number) {
+  // 新建卡片落点：画布视口中心附近，按计数错位排开
+  function centerSpot(dy: number) {
+    const n = placeRef.current++;
     const b = editor.getViewportPageBounds();
-    return { x: b.center.x - 160 + i * 36, y: b.center.y - 200 + i * 36 };
+    return { x: b.center.x - 160 + (n % 6) * 34, y: b.center.y + dy + (n % 6) * 34 };
   }
 
   // 当前选中卡片摘要：用于「当前对象」芯片 + 传给大脑解析「这张 / 它」
@@ -81,12 +86,13 @@ export default function ChatPanel() {
       typeLabel,
       name: (p.name as string) || "",
       prompt: (p.prompt as string) || "",
+      imageUrl: (p.imageUrl as string) || "",
     };
   }
 
   // 在画布上建一张「生成中」图片卡，跑文生图，结果回填卡片
   async function runGenerate(prompt: string) {
-    const o = centerOffset(imgJobs.length);
+    const o = centerSpot(-200);
     const cardId = createShapeId();
     editor.createShape({
       id: cardId,
@@ -114,6 +120,46 @@ export default function ChatPanel() {
     }
   }
 
+  // 视频生成：firstImageUrl 为空 → 文生视频(16:9 横屏)；有值 → 图生视频，用它当首帧(比例 adaptive 跟随原图)。
+  // 拿到 taskId 后设 generating，剩下的轮询交给视频卡自己（它有续查/看门狗逻辑）。
+  async function runVideo(prompt: string, fast: boolean, firstImageUrl: string) {
+    const model = fast ? VID_MODEL_FAST : VID_MODEL;
+    const ratio = firstImageUrl ? "adaptive" : "16:9";
+    const o = centerSpot(-150);
+    const cardId = createShapeId();
+    editor.createShape({
+      id: cardId,
+      type: "video-card",
+      x: o.x,
+      y: o.y,
+      props: {
+        status: "submitting",
+        prompt,
+        model,
+        resolution: "720p",
+        duration: "5",
+        ratio,
+        firstImageUrl: firstImageUrl || "",
+      },
+    });
+    editor.select(cardId);
+    try {
+      const taskId = await submitVideo({
+        prompt,
+        model,
+        resolution: "720p",
+        duration: "5",
+        ratio,
+        firstImageUrl: firstImageUrl || undefined,
+      });
+      if (editor.getShape(cardId))
+        editor.updateShape({ id: cardId, type: "video-card", props: { status: "generating", taskId } });
+    } catch (e: any) {
+      if (editor.getShape(cardId))
+        editor.updateShape({ id: cardId, type: "video-card", props: { status: "error", error: String(e?.message || e) } });
+    }
+  }
+
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
@@ -137,8 +183,19 @@ export default function ChatPanel() {
       }
       const action = data.action || { action: "answer", text: "（没听懂）" };
       if (action.action === "generate_image" && action.prompt) {
-        pushMsg("assistant", "好，正在生成，已放到画布上 →");
+        pushMsg("assistant", "好，正在生成图片，已放到画布上 →");
         runGenerate(String(action.prompt)); // 不 await：任务卡在时间线里自己跑
+      } else if (action.action === "make_video" && action.prompt) {
+        const fast = !!action.fast;
+        // 选中的是图片卡 + 大脑判定要用它 → 图生视频(首帧)；否则文生视频
+        const useImg = !!action.use_selected && !!sel && sel.type === "image-card" && !!sel.imageUrl;
+        if (useImg) {
+          pushMsg("assistant", `好，正在把选中的图做成视频（${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"}）→`);
+          runVideo(String(action.prompt), fast, sel!.imageUrl); // 不 await：交给视频卡自己轮询
+        } else {
+          pushMsg("assistant", `好，正在用 ${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"} 生成视频 →`);
+          runVideo(String(action.prompt), fast, "");
+        }
       } else if (action.action === "answer") {
         pushMsg("assistant", String(action.text || ""));
       } else {
@@ -228,6 +285,10 @@ export default function ChatPanel() {
             试着说：
             <br />
             「生成一个赛博朋克女孩」
+            <br />
+            「做一段下雨赛博城市的视频」
+            <br />
+            选中一张图 →「把这张做成视频」
           </div>
         ) : (
           timeline.map((it: any) => {
