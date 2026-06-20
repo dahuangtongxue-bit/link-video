@@ -69,7 +69,25 @@ export default function Canvas() {
     // 打开画布先清一遍历史遗留
     sweepOrphanArrows();
 
+    // 拖动即置顶：开始拖某张卡时，把它（及同时选中的卡）提到最上层。
+    // 这样新拖过来的卡盖在原内容上面，点击/拖拽也优先命中最上层，随手就能拉走。
+    // 只在「开始拖」那一刻置顶一次（升沿触发），单纯点选不改层级、不打扰。
+    let raf = 0;
+    let wasTranslating = false;
+    const watchDragToFront = () => {
+      const translating = editor.isIn("select.translating");
+      if (translating && !wasTranslating) {
+        const ids = editor.getSelectedShapeIds();
+        if (ids.length) editor.bringToFront(ids);
+      }
+      wasTranslating = translating;
+      raf = requestAnimationFrame(watchDragToFront);
+    };
+    raf = requestAnimationFrame(watchDragToFront);
+
     setReady(true);
+
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   function centerPoint(editor: Editor) {
