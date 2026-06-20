@@ -34,8 +34,11 @@ export async function POST(req: NextRequest) {
     : [];
   const srcVideo = sourceVideoUrl || "";
 
-  if (!firstUrl && !refImgs.length && !srcVideo) {
-    return NextResponse.json({ error: "缺少图片或视频输入" }, { status: 400 });
+  // 文生视频：无任何图/视频输入时，只要有提示词就放行（content 仅含 text）。
+  // 有媒体输入时仍走原有的首尾帧/参考图/续编辑规则。
+  const hasMedia = Boolean(firstUrl || refImgs.length || srcVideo);
+  if (!hasMedia && !(prompt && prompt.trim())) {
+    return NextResponse.json({ error: "文生视频至少要有提示词" }, { status: 400 });
   }
 
   // 混用规则（文档：reference_image 不能与 first/last 同时；尾帧必须配首帧）
