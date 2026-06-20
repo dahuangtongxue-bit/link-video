@@ -11,11 +11,12 @@ import "tldraw/tldraw.css";
 import { PromptShapeUtil } from "./shapes/PromptShape";
 import { ImageShapeUtil } from "./shapes/ImageShape";
 import { VideoShapeUtil } from "./shapes/VideoShape";
+import { ShotShapeUtil } from "./shapes/ShotShape";
 import ChatPanel from "./ChatPanel";
 import BottomToolbar from "./BottomToolbar";
 import { rehostImage } from "@/lib/maas";
 
-const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil];
+const customShapeUtils = [PromptShapeUtil, ImageShapeUtil, VideoShapeUtil, ShotShapeUtil];
 
 // InFrontOfTheCanvas 只能挂一个组件，这里把「底部工具栏」和「画布助手」合并
 function CanvasOverlay() {
@@ -105,6 +106,22 @@ export default function Canvas() {
       type: "prompt-card",
       x: c.x - 150,
       y: c.y - 115,
+      props: {},
+    });
+    editor.select(id);
+  }
+
+  // 「镜头卡」：电影流水线的原子单位（旋钮 + 画面内容 → 生参考帧 / 生视频）
+  function addShotCard() {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const c = centerPoint(editor);
+    const id = createShapeId();
+    editor.createShape({
+      id,
+      type: "shot-card",
+      x: c.x - 150,
+      y: c.y - 270,
       props: {},
     });
     editor.select(id);
@@ -235,6 +252,9 @@ export default function Canvas() {
             gap: 14,
           }}
         >
+          <button onClick={addShotCard} disabled={!ready} style={barBtn("#0ea5e9", ready)}>
+            + 镜头卡
+          </button>
           <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
             + 文生图片
           </button>
