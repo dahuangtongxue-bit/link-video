@@ -16,6 +16,12 @@ const IMG_SIZE = "2K";
 const VID_MODEL = VIDEO_MODELS[0]?.id || "doubao-seedance-2-0-260128";
 const VID_MODEL_FAST = VIDEO_MODELS[1]?.id || VID_MODEL;
 
+const PLACEHOLDER: Record<string, string> = {
+  ask: "问我点什么…",
+  image: "描述你想生成的图片…",
+  video: "描述视频；选中一张图则作为首帧…",
+};
+
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   config: { text: "待生成", color: "#94a3b8" },
   submitting: { text: "提交中", color: "#f59e0b" },
@@ -36,6 +42,7 @@ export default function ChatPanel() {
   const [busy, setBusy] = useState(false);
   const [, setTick] = useState(0); // store 变化 → 强制刷新，读最新任务状态
   const [copied, setCopied] = useState<string | null>(null);
+  const [mode, setMode] = useState<"ask" | "image" | "video">("image");
   const seenRef = useRef<Record<string, number>>({}); // 视频卡首次出现时间，用于排序
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const placeRef = useRef(0); // 新建卡片落点的错位计数，避免叠在一起
@@ -164,43 +171,39 @@ export default function ChatPanel() {
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
-    setBusy(true);
     pushMsg("user", text);
-    const sel = selSummary();
+
+    // 生图：直接发起，不经过聊天大脑（这条路不依赖 /api/chat）
+    if (mode === "image") {
+      pushMsg("assistant", "好，正在生成图片，已放到画布上 →");
+      runGenerate(text);
+      return;
+    }
+    // 生视频：选中一张图 → 图生视频(首帧)；否则文生视频。说「快速 / fast」用 2.0 Fast
+    if (mode === "video") {
+      const fast = /快速|fast/i.test(text);
+      const s = selSummary();
+      const useImg = !!s && s.type === "image-card" && !!s.imageUrl;
+      pushMsg(
+        "assistant",
+        useImg
+          ? `好，正在把选中的图做成视频（${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"}）→`
+          : `好，正在用 ${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"} 生成视频 →`
+      );
+      runVideo(text, fast, useImg ? s!.imageUrl : "");
+      return;
+    }
+    // 生文：纯问答，走聊天大脑
+    setBusy(true);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-access-key": getAccessKey() },
-        body: JSON.stringify({
-          message: text,
-          context: sel ? { selected: { type: sel.type, name: sel.name, prompt: sel.prompt } } : null,
-        }),
+        body: JSON.stringify({ message: text, mode: "ask" }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data) {
-        pushMsg("assistant", `出错了：${data?.error || `HTTP ${res.status}`}`);
-        return;
-      }
-      const action = data.action || { action: "answer", text: "（没听懂）" };
-      if (action.action === "generate_image" && action.prompt) {
-        pushMsg("assistant", "好，正在生成图片，已放到画布上 →");
-        runGenerate(String(action.prompt)); // 不 await：任务卡在时间线里自己跑
-      } else if (action.action === "make_video" && action.prompt) {
-        const fast = !!action.fast;
-        // 选中的是图片卡 + 大脑判定要用它 → 图生视频(首帧)；否则文生视频
-        const useImg = !!action.use_selected && !!sel && sel.type === "image-card" && !!sel.imageUrl;
-        if (useImg) {
-          pushMsg("assistant", `好，正在把选中的图做成视频（${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"}）→`);
-          runVideo(String(action.prompt), fast, sel!.imageUrl); // 不 await：交给视频卡自己轮询
-        } else {
-          pushMsg("assistant", `好，正在用 ${fast ? "Seedance 2.0 Fast" : "Seedance 2.0"} 生成视频 →`);
-          runVideo(String(action.prompt), fast, "");
-        }
-      } else if (action.action === "answer") {
-        pushMsg("assistant", String(action.text || ""));
-      } else {
-        pushMsg("assistant", String(action.text || "这个动作我还在接入中。"));
-      }
+      if (!res.ok || !data) pushMsg("assistant", `出错了：${data?.error || `HTTP ${res.status}`}`);
+      else pushMsg("assistant", String(data.text || "（没拿到回答）"));
     } catch (e: any) {
       pushMsg("assistant", `网络错误：${String(e?.message || e)}`);
     } finally {
@@ -282,13 +285,9 @@ export default function ChatPanel() {
       <div ref={scrollRef} style={scroll}>
         {timeline.length === 0 ? (
           <div style={empty}>
-            试着说：
+            下面选模式,再描述：
             <br />
-            「生成一个赛博朋克女孩」
-            <br />
-            「做一段下雨赛博城市的视频」
-            <br />
-            选中一张图 →「把这张做成视频」
+            生图 / 生视频(选中图=首帧) / 生文问答
           </div>
         ) : (
           timeline.map((it: any) => {
@@ -367,11 +366,22 @@ export default function ChatPanel() {
       </div>
 
       <div style={footer}>
-        {sel && (
+        <div style={modeRow}>
+          {([
+            ["ask", "生文"],
+            ["image", "生图"],
+            ["video", "生视频"],
+          ] as const).map(([m, label]) => (
+            <button key={m} onClick={() => setMode(m)} style={modeBtn(mode === m)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode === "video" && sel && sel.type === "image-card" && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>当前</span>
-            <span style={chip} title={sel.prompt}>
-              {sel.typeLabel + (sel.name ? ` · ${sel.name}` : sel.prompt ? ` · ${sel.prompt.slice(0, 12)}…` : "")}
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>首帧</span>
+            <span style={chip} title={sel.name || sel.prompt}>
+              {(sel.name || (sel.prompt ? sel.prompt.slice(0, 12) + "…" : "选中的图")) + " · 作首帧"}
             </span>
           </div>
         )}
@@ -386,7 +396,7 @@ export default function ChatPanel() {
               }
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            placeholder="描述你想生成的图片，或问我点什么…"
+            placeholder={PLACEHOLDER[mode]}
             rows={2}
             style={textArea}
           />
@@ -519,6 +529,20 @@ const miniBtn: CSSProperties = {
   cursor: "pointer",
 };
 const footer: CSSProperties = { flexShrink: 0, padding: 12, borderTop: "1px solid #f0f0f0" };
+const modeRow: CSSProperties = { display: "flex", gap: 6, marginBottom: 10 };
+function modeBtn(active: boolean): CSSProperties {
+  return {
+    flex: 1,
+    height: 30,
+    borderRadius: 8,
+    border: `1px solid ${active ? "#16181d" : "#e5e7eb"}`,
+    background: active ? "#16181d" : "#fff",
+    color: active ? "#fff" : "#475569",
+    fontSize: 12,
+    fontWeight: active ? 600 : 400,
+    cursor: "pointer",
+  };
+}
 const chip: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
