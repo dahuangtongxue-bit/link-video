@@ -57,3 +57,27 @@ export type VideoShape = TLBaseShape<
     ratio: string; // adaptive / 16:9 / 9:16 / 1:1 / 4:3 / 3:4
   }
 >;
+
+// 镜头卡：电影流水线的原子单位。结构化旋钮(景别/运镜/光线/质感/色调/时长) + 画面内容，
+// 旋钮自动拼成 Seedance 提示词。「生参考帧」→ 下方生出图片卡；「生视频」→ 右侧生出视频卡。
+export type ShotShape = TLBaseShape<
+  "shot-card",
+  {
+    w: number;
+    h: number;
+    shotNo: string; // 镜号，如 "01"
+    title: string; // 镜头标题
+    shotSize: string; // 景别（存提示词片段，空=自动）
+    cameraMove: string; // 运镜
+    light: string; // 光线/时间
+    texture: string; // 质感/风格（参考帧用）
+    color: string; // 色彩调性（参考帧用）
+    duration: string; // 时长秒
+    content: string; // 画面内容（核心提示词）
+    imageModel: string; // 生参考帧用的图像模型
+    size: string; // 参考帧分辨率 2K / 4K
+    videoModel: string; // 生视频用的视频模型
+    refFrameUrl: string; // 已生成的参考帧 URL（用作首帧）
+    status: string; // idle（镜头卡本身只是控制器）
+  }
+>;
