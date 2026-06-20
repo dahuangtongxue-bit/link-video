@@ -193,6 +193,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
    name } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState(false);
+  const [paramsOpen, setParamsOpen] = useState(false); // config 态参数面板默认收起，点「设置参数」才展开
   const [menuOpen, setMenuOpen] = useState(false); // done 视频右下角"更多"菜单
   const [optBusy, setOptBusy] = useState(false);
 
@@ -459,6 +460,18 @@ function VideoCard({ shape }: { shape: VideoShape }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
+  // config 态：参数收起 → 卡片变矮(只剩视频区+按钮)，展开 → 给足高度放参数。
+  // 默认收起，避免一建卡就铺一堆参数。
+  useEffect(() => {
+    if (status !== "config") return;
+    const want = paramsOpen ? 656 : 300;
+    const s = editor.getShape(shapeId) as VideoShape | undefined;
+    if (s && Math.abs((s.props.h || 0) - want) > 2) {
+      editor.updateShape<VideoShape>({ id: shapeId, type: "video-card", props: { h: want } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, paramsOpen]);
+
   return (
     <HTMLContainer>
       <div style={{ position: "relative", width: w, height: h, overflow: "visible" }}>
@@ -489,8 +502,30 @@ function VideoCard({ shape }: { shape: VideoShape }) {
           }}
         >
           {status === "config" && (
-            <div style={{ fontSize: 12, color: "#64748b", fontFamily: TOKENS.mono }}>
-              视频将在这里生成
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 12, color: "#64748b", fontFamily: TOKENS.mono, marginBottom: 12 }}>
+                视频将在这里生成
+              </div>
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setParamsOpen((v) => !v);
+                }}
+                style={{
+                  height: 30,
+                  padding: "0 16px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  background: "rgba(255,255,255,0.08)",
+                  color: "#e2e8f0",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  pointerEvents: "all",
+                }}
+              >
+                {paramsOpen ? "收起参数 ▴" : "⚙ 设置参数 ▾"}
+              </button>
             </div>
           )}
           {(status === "submitting" || status === "generating") && (
@@ -777,8 +812,8 @@ function VideoCard({ shape }: { shape: VideoShape }) {
           )}
         </div>
 
-        {/* 配置面板：仅 config 态显示；提交后整张卡变成播放器 */}
-        {status === "config" && (
+        {/* 配置面板：仅 config 态且参数已展开时显示；提交后整张卡变成播放器 */}
+        {status === "config" && paramsOpen && (
           <div
             style={{
               padding: "0 10px 10px",
