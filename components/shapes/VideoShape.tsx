@@ -193,7 +193,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
    name } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState(false);
-  const [paramsOpen, setParamsOpen] = useState(false); // config 态参数面板默认收起，点「设置参数」才展开
+  const [paramsOpen, setParamsOpen] = useState(true); // config 态参数面板默认展开，无需点击
   const [menuOpen, setMenuOpen] = useState(false); // done 视频右下角"更多"菜单
   const [optBusy, setOptBusy] = useState(false);
 
@@ -461,7 +461,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
   }, [status]);
 
   // config 态：参数收起 → 卡片变矮(只剩视频区+按钮)，展开 → 给足高度放参数。
-  // 默认收起，避免一建卡就铺一堆参数。
+  // 默认展开，建卡即可直接配参数。
   useEffect(() => {
     if (status !== "config") return;
     const want = paramsOpen ? 656 : 300;
