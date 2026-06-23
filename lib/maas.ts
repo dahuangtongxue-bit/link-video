@@ -70,7 +70,7 @@ export async function rehostImage(image: string): Promise<string> {
   return data.url as string;
 }
 
-export async function generateImage(prompt: string, model: string, size?: string): Promise<string> {
+export async function generateImage(prompt: string, model: string, size?: string, ratio?: string): Promise<string> {
   const jobId =
     (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
     `job_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -81,7 +81,7 @@ export async function generateImage(prompt: string, model: string, size?: string
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ jobId, prompt, model, size }),
+      body: JSON.stringify({ jobId, prompt, model, size, ratio }),
     },
     20000
   );
