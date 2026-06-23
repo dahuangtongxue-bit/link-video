@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ShotShape } from "@/lib/types";
-import { generateImage, rehostImage, submitVideo } from "@/lib/maas";
+import { generateImage, rehostImage } from "@/lib/maas";
 import { IMAGE_MODELS, IMAGE_SIZES, IMAGE_RATIOS, VIDEO_MODELS } from "@/lib/models";
 import { connectShapes } from "@/lib/connect";
 import {
@@ -95,10 +95,10 @@ function ShotCard({ shape }: { shape: ShotShape }) {
   const editor = useEditor();
   const {
     w, h, shotNo, title, shotSize, cameraMove, light, texture, color,
-    duration, content, imageModel, size, ratio, videoModel, srcImageUrl, refFrameUrl,
+    duration, content, imageModel, size, ratio, srcImageUrl, refFrameUrl,
   } = shape.props;
   const shapeId = shape.id;
-  const [busy, setBusy] = useState<null | "frame" | "video">(null);
+  const [busy, setBusy] = useState<null | "frame">(null);
   // 「选画布图片做图生图」：点按钮进入拾取态，再点画布上任意一张已完成的图片卡即捕获为源图
   const [picking, setPicking] = useState(false);
 
@@ -131,19 +131,10 @@ function ShotCard({ shape }: { shape: ShotShape }) {
   function imagePrompt(): string {
     return [content, shotSize, texture, color, light].map((s) => (s || "").trim()).filter(Boolean).join("，");
   }
-  // 视频提示词：内容 + 运镜 + 光线（控制"怎么动"；画面观感由参考帧承载）
-  function videoPrompt(): string {
-    const p = [content, cameraMove, light].map((s) => (s || "").trim()).filter(Boolean).join("，");
-    return p || "让画面自然地动起来，保持主体稳定、镜头平滑";
-  }
 
   function belowPos() {
     const b = editor.getShapePageBounds(shapeId);
     return b ? { x: b.x, y: b.y + b.h + 44 } : { x: (shape as any).x, y: (shape as any).y + h + 44 };
-  }
-  function rightPos() {
-    const b = editor.getShapePageBounds(shapeId);
-    return b ? { x: b.x + b.w + 56, y: b.y } : { x: (shape as any).x + w + 56, y: (shape as any).y };
   }
 
   // 「生参考帧」：在镜头卡下方生出一张图片卡，复用现成出图管线
@@ -180,51 +171,6 @@ function ShotCard({ shape }: { shape: ShotShape }) {
     } catch (e: any) {
       if (editor.getShape(imgId)) {
         editor.updateShape({ id: imgId, type: "image-card", props: { status: "error", error: String(e?.message || e) } });
-      }
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  // 「生视频」：在镜头卡右侧生出一张视频卡，有参考帧就当首帧，没有则文生视频
-  async function genVideo() {
-    if (busy) return;
-    setBusy("video");
-    const pos = rightPos();
-    const vidId = createShapeId();
-    const useFrame = !!refFrameUrl;
-    editor.createShape({
-      id: vidId,
-      type: "video-card",
-      x: pos.x,
-      y: pos.y,
-      props: {
-        status: "submitting",
-        prompt: videoPrompt(),
-        model: videoModel,
-        firstImageUrl: useFrame ? refFrameUrl : "",
-        resolution: "720p",
-        duration,
-        ratio: useFrame ? "adaptive" : (ratio || "16:9"),
-      },
-    });
-    connectShapes(editor, shapeId as any, vidId as any);
-    try {
-      const taskId = await submitVideo({
-        firstImageUrl: useFrame ? refFrameUrl : undefined,
-        prompt: videoPrompt(),
-        model: videoModel,
-        resolution: "720p",
-        duration,
-        ratio: useFrame ? "adaptive" : (ratio || "16:9"),
-      });
-      if (editor.getShape(vidId)) {
-        // 切到 generating + taskId → 视频卡自己接管轮询
-        editor.updateShape({ id: vidId, type: "video-card", props: { status: "generating", taskId } });
-      }
-    } catch (e: any) {
-      if (editor.getShape(vidId)) {
-        editor.updateShape({ id: vidId, type: "video-card", props: { status: "error", error: String(e?.message || e) } });
       }
     } finally {
       setBusy(null);
@@ -370,32 +316,6 @@ function ShotCard({ shape }: { shape: ShotShape }) {
                 ? "图生关键帧 ↓"
                 : "生成关键帧 ↓"}
             </button>
-
-            {refFrameUrl ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={refFrameUrl}
-                  alt=""
-                  style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: `1px solid ${TOKENS.border}` }}
-                />
-                <span style={{ fontSize: 11, color: "#64748b" }}>参考帧已就绪 · 将作首帧</span>
-              </div>
-            ) : null}
-
-            {/* 第二阶段：生视频 */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {knob(videoModel, VIDEO_MODELS.map((m) => ({ v: m.id, label: m.label })), (v) => update({ videoModel: v }))}
-            </div>
-            <button
-              style={{ ...primaryBtn(TOKENS.video, busy === "video"), width: "100%" }}
-              disabled={busy === "video"}
-              title={refFrameUrl ? "用参考帧当首帧生成视频" : "未生成参考帧，将用文生视频"}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={genVideo}
-            >
-              {busy === "video" ? "提交视频…" : refFrameUrl ? "生视频（首帧） →" : "生视频（文生） →"}
-            </button>
           </div>
         </div>
       </div>
@@ -456,7 +376,7 @@ export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
   getDefaultProps(): ShotShape["props"] {
     return {
       w: 300,
-      h: 540,
+      h: 480,
       shotNo: "",
       title: "",
       shotSize: "",
