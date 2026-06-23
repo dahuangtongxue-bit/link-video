@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { prompt, model, size, ratio } = await req.json().catch(() => ({}));
+  const { prompt, model, size, ratio, image: srcImage } = await req.json().catch(() => ({}));
   if (!prompt) return NextResponse.json({ error: "缺少 prompt" }, { status: 400 });
 
   // 档位 × 比例 → 宽x高（与后台函数、lib/models.ts 共用同一张 SIZE_TABLE）
@@ -26,19 +26,22 @@ export async function POST(req: NextRequest) {
   // 已按公开标准格式接好；若你 零克云 文档不同，核对带 ← 的几行即可。
   // ===================================================================
   try {
+    const genBody: Record<string, any> = {
+      model,                       // 模型名来自 lib/models.ts
+      prompt,
+      size: px,                    // 由 档位×比例 映射而来
+      response_format: "url",      // ← 要 url；平台只给 base64 就改 "b64_json"
+      watermark: false,            // ← 去水印（个别平台没这个字段，删掉即可）
+    };
+    if (srcImage) genBody.image = srcImage;  // ← 图生图：源图字段（若文档叫 image_url/images 就改这里）
+
     const r = await fetch(`${IMAGE_BASE_URL}/v1/images/generations`, {   // ← 接口路径
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${IMAGE_API_KEY}`,
       },
-      body: JSON.stringify({
-        model,                       // 模型名来自 lib/models.ts
-        prompt,
-        size: px,                    // ← 由界面选择的 1K/2K/4K 映射而来，默认 2K
-        response_format: "url",      // ← 要 url；平台只给 base64 就改 "b64_json"
-        watermark: false,            // ← 去水印（个别平台没这个字段，删掉即可）
-      }),
+      body: JSON.stringify(genBody),
     });
 
     if (!r.ok) {
