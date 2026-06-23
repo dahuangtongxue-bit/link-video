@@ -79,6 +79,7 @@ export type ShotShape = TLBaseShape<
     size: string; // 参考帧分辨率 2K / 4K
     ratio: string; // 参考帧比例 16:9 / 9:16 / ...（决定首帧形状 → 视频比例）
     videoModel: string; // 生视频用的视频模型
+    srcImageUrl: string; // 图生图源图（画布上选中的图片，可选）：有值则生关键帧走图生图
     refFrameUrl: string; // 已生成的参考帧 URL（用作首帧）
     status: string; // idle（镜头卡本身只是控制器）
   }
