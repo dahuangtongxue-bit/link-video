@@ -71,7 +71,7 @@ export default async (req) => {
   try {
     body = await req.json();
   } catch {}
-  const { jobId, prompt, model, size, ratio } = body || {};
+  const { jobId, prompt, model, size, ratio, image: srcImage } = body || {};
   const accessKey = req.headers.get("x-access-key") || (body && body.accessKey) || "";
 
   const PASS = (process.env.ACCESS_PASSWORD || "").trim();
@@ -108,16 +108,21 @@ export default async (req) => {
   const px = tier[String(ratio || "16:9")] || tier["16:9"];
 
   try {
+    // 图生图：源图存在就带上 image 字段，平台据此重绘到目标 size（实现 1:1 → 16:9 换比例）。
+    // srcImage 一般是已转存的 ImgBB 永久 URL（最被广泛接受）；也兼容 base64。
+    const genBody = {
+      model,
+      prompt,
+      size: px,
+      response_format: "url",
+      watermark: false,
+    };
+    if (srcImage) genBody.image = srcImage;   // ← 图生图源图字段名（若 零克云 文档叫 image_url / images，改这里）
+
     const r = await fetch(`${BASE}/v1/images/generations`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
-      body: JSON.stringify({
-        model,
-        prompt,
-        size: px,
-        response_format: "url",
-        watermark: false,
-      }),
+      body: JSON.stringify(genBody),
     });
     const text = await r.text();
     let data = null;
