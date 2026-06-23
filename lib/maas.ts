@@ -70,18 +70,19 @@ export async function rehostImage(image: string): Promise<string> {
   return data.url as string;
 }
 
-export async function generateImage(prompt: string, model: string, size?: string, ratio?: string): Promise<string> {
+export async function generateImage(prompt: string, model: string, size?: string, ratio?: string, srcImage?: string): Promise<string> {
   const jobId =
     (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
     `job_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
   // 1) 触发后台任务（-background 函数立即回 202，函数体继续在后台跑）
+  //    srcImage 存在 = 图生图（把源图发给平台，按目标 size 重绘）；不传 = 纯文生图。
   const kick = await fetchWithTimeout(
     "/.netlify/functions/image-gen-background",
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ jobId, prompt, model, size, ratio }),
+      body: JSON.stringify({ jobId, prompt, model, size, ratio, image: srcImage }),
     },
     20000
   );
