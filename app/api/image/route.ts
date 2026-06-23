@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, imageIsMock, IMAGE_API_KEY, IMAGE_BASE_URL, sleep } from "@/lib/serverAuth";
+import { imageSize } from "@/lib/models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,17 +8,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: "访问口令错误" }, { status: 401 });
 
-  const { prompt, model, size } = await req.json().catch(() => ({}));
+  const { prompt, model, size, ratio } = await req.json().catch(() => ({}));
   if (!prompt) return NextResponse.json({ error: "缺少 prompt" }, { status: 400 });
 
-  // 分辨率档位 → 像素。Seedream 4.x 要求 ≥3686400 像素（1K 大概率被拒）；
-  // 5.0 各档支持情况以平台实测为准——不支持时平台错误会原样显示在卡片上。
-  const SIZE_MAP: Record<string, string> = {
-    "1K": "1024x1024",
-    "2K": "2048x2048",
-    "4K": "4096x4096",
-  };
-  const px = SIZE_MAP[String(size || "").toUpperCase()] || "2048x2048";
+  // 档位 × 比例 → 宽x高（与后台函数、lib/models.ts 共用同一张 SIZE_TABLE）
+  const px = imageSize(size, ratio);
 
   // ---------- MOCK：未配置平台时返回占位图 ----------
   if (imageIsMock) {
