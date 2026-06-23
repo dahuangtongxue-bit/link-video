@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ShotShape } from "@/lib/types";
 import { generateImage, rehostImage, submitVideo } from "@/lib/maas";
@@ -95,10 +95,33 @@ function ShotCard({ shape }: { shape: ShotShape }) {
   const editor = useEditor();
   const {
     w, h, shotNo, title, shotSize, cameraMove, light, texture, color,
-    duration, content, imageModel, size, ratio, videoModel, refFrameUrl,
+    duration, content, imageModel, size, ratio, videoModel, srcImageUrl, refFrameUrl,
   } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState<null | "frame" | "video">(null);
+  // 「选画布图片做图生图」：点按钮进入拾取态，再点画布上任意一张已完成的图片卡即捕获为源图
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    if (!editor || !picking) return;
+    let raf = 0;
+    const tick = () => {
+      try {
+        const sel = editor.getSelectedShapes?.() ?? [];
+        const img = sel.find(
+          (s: any) => s.type === "image-card" && s.props?.status === "done" && s.props?.imageUrl
+        );
+        if (img) {
+          editor.updateShape({ id: shapeId, type: "shot-card", props: { srcImageUrl: (img as any).props.imageUrl } } as any);
+          setPicking(false);
+          return; // 命中即停，不再续帧
+        }
+      } catch {}
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [editor, picking, shapeId]);
 
   function update(props: Partial<ShotShape["props"]>) {
     editor.updateShape<ShotShape>({ id: shapeId, type: "shot-card", props });
@@ -143,7 +166,8 @@ function ShotCard({ shape }: { shape: ShotShape }) {
     });
     connectShapes(editor, shapeId as any, imgId as any);
     try {
-      let url = await generateImage(p, imageModel, size, ratio);
+      // 选了画布源图 → 图生图（复用本卡提示词+参数，按 ratio 重绘）；没选 → 普通文生关键帧
+      let url = await generateImage(p, imageModel, size, ratio, srcImageUrl || undefined);
       try {
         url = await rehostImage(url); // 转永久 URL，便于后面当首帧/参考图
       } catch {
@@ -296,13 +320,55 @@ function ShotCard({ shape }: { shape: ShotShape }) {
               {knob(size, IMAGE_SIZES.map((s) => ({ v: s.id, label: s.label })), (v) => update({ size: v }))}
               {knob(ratio, IMAGE_RATIOS.map((r) => ({ v: r.id, label: r.label })), (v) => update({ ratio: v }))}
             </div>
+            {/* 图生图源图（可选）：从画布选一张图当参考，复用本卡提示词与参数重绘 */}
+            {srcImageUrl ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f0f9ff", border: `1px solid ${SHOT}`, borderRadius: 6, padding: "5px 7px" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={srcImageUrl} alt="" style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, border: `1px solid ${TOKENS.border}` }} />
+                <span style={{ fontSize: 11, color: "#0369a1", flex: 1 }}>已选源图 · 将走图生图</span>
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); update({ srcImageUrl: "" }); }}
+                  style={{ height: 22, padding: "0 8px", borderRadius: 6, border: `1px solid ${TOKENS.border}`, background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", pointerEvents: "all" }}
+                >
+                  ✕ 清除
+                </button>
+              </div>
+            ) : picking ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#fffbeb", border: "1px dashed #f59e0b", borderRadius: 6, padding: "6px 8px" }}>
+                <span style={{ fontSize: 11, color: "#b45309", flex: 1 }}>👉 点选画布上的一张图片卡作源图…</span>
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setPicking(false); }}
+                  style={{ height: 22, padding: "0 8px", borderRadius: 6, border: `1px solid ${TOKENS.border}`, background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", pointerEvents: "all" }}
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setPicking(true); }}
+                style={{ height: 30, borderRadius: 8, border: `1px dashed ${TOKENS.border}`, background: "#fafafa", color: TOKENS.muted, fontSize: 12, cursor: "pointer", pointerEvents: "all", textAlign: "left", padding: "0 10px", fontFamily: TOKENS.sans }}
+                title="从画布选一张图作源图 → 生关键帧时走图生图（复用本卡提示词与参数）"
+              >
+                ＋ 选画布图片做图生图（可选）
+              </button>
+            )}
+
             <button
               style={{ ...primaryBtn(SHOT, busy === "frame"), width: "100%" }}
               disabled={busy === "frame"}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={genFrame}
             >
-              {busy === "frame" ? "生成参考帧…" : refFrameUrl ? "重生参考帧 ↓" : "生参考帧 ↓"}
+              {busy === "frame"
+                ? "生成关键帧…"
+                : refFrameUrl
+                ? "重新生成 ↓"
+                : srcImageUrl
+                ? "图生关键帧 ↓"
+                : "生成关键帧 ↓"}
             </button>
 
             {refFrameUrl ? (
@@ -339,7 +405,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
 
 // 旧画布数据升级：给已存在的镜头卡补上 ratio 字段，避免清空画布。
 // 注意：ShotShape 此前没有迁移序列，这是第一条 —— 别删，否则老画布加载会校验失败。
-const shotCardVersions = createShapePropsMigrationIds("shot-card", { AddRatio: 1 });
+const shotCardVersions = createShapePropsMigrationIds("shot-card", { AddRatio: 1, AddSrcImage: 2 });
 const shotCardMigrations = createShapePropsMigrationSequence({
   sequence: [
     {
@@ -349,6 +415,15 @@ const shotCardMigrations = createShapePropsMigrationSequence({
       },
       down(props: any) {
         delete props.ratio;
+      },
+    },
+    {
+      id: shotCardVersions.AddSrcImage,
+      up(props: any) {
+        props.srcImageUrl = "";
+      },
+      down(props: any) {
+        delete props.srcImageUrl;
       },
     },
   ],
@@ -373,6 +448,7 @@ export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
     size: T.string,
     ratio: T.string,
     videoModel: T.string,
+    srcImageUrl: T.string,
     refFrameUrl: T.string,
     status: T.string,
   };
@@ -394,6 +470,7 @@ export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
       size: "2K",
       ratio: "16:9",
       videoModel: VIDEO_MODELS[0]?.id ?? "",
+      srcImageUrl: "",
       refFrameUrl: "",
       status: "idle",
     };
