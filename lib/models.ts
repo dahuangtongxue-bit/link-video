@@ -20,6 +20,45 @@ export const IMAGE_SIZES: ModelOption[] = [
   { id: "4K", label: "4K" },
 ];
 
+// 文生图画面比例。决定生成图的形状，进而决定图生视频（adaptive 跟随首帧）的视频比例。
+export const IMAGE_RATIOS: ModelOption[] = [
+  { id: "16:9", label: "16:9 横屏" },
+  { id: "9:16", label: "9:16 竖屏" },
+  { id: "1:1", label: "1:1 方形" },
+  { id: "4:3", label: "4:3" },
+  { id: "3:4", label: "3:4" },
+  { id: "21:9", label: "21:9 宽幅" },
+];
+
+// 档位 × 比例 → 实际生成尺寸（宽x高，发给平台的 size 字段）。
+// 约束：豆包全系像素下限 3,686,400；单边上限 4096。下表各项均已满足，且为精确比例、边长对齐到 16。
+// 注意：.netlify/functions/image-gen-background.mjs 内联了同一张表，改这里记得同步那边。
+const SIZE_TABLE: Record<string, Record<string, string>> = {
+  "2K": {
+    "16:9": "2816x1584",
+    "9:16": "1584x2816",
+    "1:1": "2048x2048",
+    "4:3": "2304x1728",
+    "3:4": "1728x2304",
+    "21:9": "2940x1260",
+  },
+  "4K": {
+    "16:9": "4096x2304",
+    "9:16": "2304x4096",
+    "1:1": "4096x4096",
+    "4:3": "4096x3072",
+    "3:4": "3072x4096",
+    "21:9": "4095x1755",
+  },
+};
+
+export function imageSize(tier?: string, ratio?: string): string {
+  const t = String(tier || "2K").toUpperCase();
+  const r = String(ratio || "16:9");
+  const tierTable = SIZE_TABLE[t] || SIZE_TABLE["2K"];
+  return tierTable[r] || tierTable["16:9"] || "2816x1584";
+}
+
 // 图生视频（Seedance 2.0）
 export const VIDEO_MODELS: ModelOption[] = [
   { id: "doubao-seedance-2-0-260128", label: "Seedance 2.0" },
