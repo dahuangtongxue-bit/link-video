@@ -11,7 +11,7 @@ import {
   createShapePropsMigrationSequence,
 } from "tldraw";
 import type { PromptShape } from "@/lib/types";
-import { IMAGE_MODELS, IMAGE_SIZES } from "@/lib/models";
+import { IMAGE_MODELS, IMAGE_SIZES, IMAGE_RATIOS } from "@/lib/models";
 import { generateImage, optimizePrompt } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import {
@@ -46,7 +46,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
       setOptBusy(false);
     }
   }
-  const { prompt, imageModel, size, w, h , name } = shape.props;
+  const { prompt, imageModel, size, ratio, w, h , name } = shape.props;
 
   function update(props: Partial<PromptShape["props"]>) {
     editor.updateShape<PromptShape>({ id: shape.id, type: "prompt-card", props });
@@ -74,7 +74,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
 
     (async () => {
       try {
-        const url = await generateImage(text, imageModel, size);
+        const url = await generateImage(text, imageModel, size, ratio);
         if (editor.getShape(id)) {
           editor.updateShape({ id, type: "image-card", props: { status: "done", imageUrl: url } });
         }
@@ -143,8 +143,8 @@ function PromptCard({ shape }: { shape: PromptShape }) {
             ))}
           </select>
           <select
-            style={{ ...selectStyle, width: 72 }}
-            title="生成分辨率（以平台支持为准）"
+            style={{ ...selectStyle, width: 64 }}
+            title="清晰度档（以平台支持为准）"
             value={size}
             onPointerDown={(e) => e.stopPropagation()}
             onChange={(e) => update({ size: e.target.value })}
@@ -156,6 +156,19 @@ function PromptCard({ shape }: { shape: PromptShape }) {
             ))}
           </select>
         </div>
+        <select
+          style={{ ...selectStyle, width: "100%" }}
+          title="画面比例 → 决定下游图生视频的视频比例"
+          value={ratio}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => update({ ratio: e.target.value })}
+        >
+          {IMAGE_RATIOS.map((r) => (
+            <option key={r.id} value={r.id}>
+              比例 {r.label}
+            </option>
+          ))}
+        </select>
         <button
           style={{ ...primaryBtn(TOKENS.prompt, busy || !prompt.trim()), width: "100%" }}
           disabled={busy || !prompt.trim()}
@@ -170,7 +183,7 @@ function PromptCard({ shape }: { shape: PromptShape }) {
   );
 }
 
-const promptCardVersions = createShapePropsMigrationIds("prompt-card", { AddName: 1 });
+const promptCardVersions = createShapePropsMigrationIds("prompt-card", { AddName: 1, AddRatio: 2 });
 const promptCardMigrations = createShapePropsMigrationSequence({
   sequence: [
     {
@@ -180,6 +193,15 @@ const promptCardMigrations = createShapePropsMigrationSequence({
       },
       down(props: any) {
         delete props.name;
+      },
+    },
+    {
+      id: promptCardVersions.AddRatio,
+      up(props: any) {
+        props.ratio = "16:9";
+      },
+      down(props: any) {
+        delete props.ratio;
       },
     },
   ],
@@ -195,6 +217,7 @@ export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
     prompt: T.string,
     imageModel: T.string,
     size: T.string,
+    ratio: T.string,
   };
 
   getDefaultProps(): PromptShape["props"] {
@@ -205,6 +228,7 @@ export class PromptShapeUtil extends BaseBoxShapeUtil<PromptShape> {
       prompt: "",
       imageModel: IMAGE_MODELS[0]?.id ?? "",
       size: "2K",
+      ratio: "16:9",
     };
   }
 
