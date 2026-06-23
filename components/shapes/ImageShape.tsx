@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ImageShape } from "@/lib/types";
-import { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RATIOS } from "@/lib/models";
-import { submitVideo, optimizePrompt, describeImage, generateImage } from "@/lib/maas";
+import { VIDEO_MODELS } from "@/lib/models";
+import { submitVideo, optimizePrompt, describeImage } from "@/lib/maas";
 import { connectShapes } from "@/lib/connect";
 import { TOKENS, cardShell, labelStyle, nameInputStyle, outerNameRowStyle, outerNameInputStyle, primaryBtn, selectStyle, textAreaStyle } from "./cardStyles";
 
@@ -59,12 +59,6 @@ function ImageCard({ shape }: { shape: ImageShape }) {
   const [busy, setBusy] = useState(false);
   const [optBusy, setOptBusy] = useState(false);
   const [revBusy, setRevBusy] = useState(false);
-  // 图生图（换比例/重绘）：源图就是本卡，目标比例 + 可选提示词 → 新建一张目标比例的图片卡。
-  // 用本地 state，不持久化（属于一次性动作输入），避免给 ImageShape 再加 migration。
-  const [i2iOpen, setI2iOpen] = useState(false);
-  const [i2iRatio, setI2iRatio] = useState("16:9");
-  const [i2iPrompt, setI2iPrompt] = useState("");
-  const [i2iBusy, setI2iBusy] = useState(false);
   // 运动提示文本框：默认收起，点击展开（有内容时默认展开）
   const [motionOpen, setMotionOpen] = useState(false);
   // 是否选中本卡：选中才展开下方控制区，平时收起让卡片清爽
@@ -80,7 +74,9 @@ function ImageCard({ shape }: { shape: ImageShape }) {
         // 同步 props.h 给 tldraw 做选框/连线几何（渲染已自适应，不依赖它）
         const cur = editor.getShape(shape.id) as any;
         if (cur && cur.type === "image-card") {
-          const wantH = isSel ? cur.props.w + 250 : cur.props.w;
+          // 上传的图：纯展示，不展开控制区，高度始终 = 卡宽
+          const isUpload = cur.props.prompt === "(上传)";
+          const wantH = isUpload ? cur.props.w : isSel ? cur.props.w + 250 : cur.props.w;
           if (Math.abs((cur.props.h || 0) - wantH) > 2) {
             editor.updateShape({ id: shape.id, type: "image-card", props: { h: wantH } });
           }
@@ -137,48 +133,6 @@ function ImageCard({ shape }: { shape: ImageShape }) {
     } finally {
       if (editor.getShape(shape.id)) setRevBusy(false);
     }
-  }
-
-  // 图生图：拿本卡当源图，按目标比例重绘出一张新图片卡（下方生出，自动连线）。
-  // 典型用途：上传的 1:1 图 → 重绘成 16:9 → 再图生视频得到 16:9 视频。
-  async function handleImg2Img() {
-    if (i2iBusy || status !== "done" || !imageUrl) return;
-    setI2iBusy(true);
-    const text =
-      i2iPrompt.trim() ||
-      "保持原图的主体、风格与构图，自然扩展画面到新的画面比例，主体不变形、不裁切";
-    const model = IMAGE_MODELS[0]?.id ?? "";
-    const id = createShapeId();
-    editor.createShape({
-      id,
-      type: "image-card",
-      // 生在本卡正下方（图片区高度≈卡宽，留 80 间距）
-      x: shape.x,
-      y: shape.y + w + 80,
-      props: { status: "generating", prompt: text, model },
-    });
-    connectShapes(editor, shape.id, id);
-    editor.select(id);
-    (async () => {
-      try {
-        // size 给 2K 档；ratio 决定形状；imageUrl 作为源图 → 图生图
-        const url = await generateImage(text, model, "2K", i2iRatio, imageUrl);
-        if (editor.getShape(id)) {
-          editor.updateShape({
-            id,
-            type: "image-card",
-            // 新图已是目标比例，顺手把它的「图生视频比例」也设成同值
-            props: { status: "done", imageUrl: url, videoRatio: i2iRatio },
-          });
-        }
-      } catch (e: any) {
-        if (editor.getShape(id)) {
-          editor.updateShape({ id, type: "image-card", props: { status: "error", error: String(e?.message || e) } });
-        }
-      } finally {
-        setI2iBusy(false);
-      }
-    })();
   }
 
   async function handleMakeVideo() {
@@ -287,14 +241,14 @@ function ImageCard({ shape }: { shape: ImageShape }) {
             <img
               src={imageUrl}
               alt={prompt}
-              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
               draggable={false}
             />
           )}
         </div>
 
-        {/* 控制区：图生视频 —— 仅选中卡片时展开 */}
-        {selected && (
+        {/* 控制区：图生视频 —— 仅选中时展开；上传的图为纯展示，不显示任何控制 */}
+        {selected && prompt !== "(上传)" && (
         <div
           style={{
             padding: 10,
@@ -339,83 +293,6 @@ function ImageCard({ shape }: { shape: ImageShape }) {
               </button>
             )}
           </div>
-
-          {/* 图生图：换比例 / 重绘 —— 上传/生成的图在这里改成目标比例，再去图生视频 */}
-          {status === "done" && imageUrl && (
-            <div
-              style={{
-                border: `1px solid ${TOKENS.border}`,
-                borderRadius: 8,
-                background: "#f8fafc",
-                padding: 8,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setI2iOpen((v) => !v);
-                }}
-                style={{
-                  height: 26,
-                  borderRadius: 6,
-                  border: "none",
-                  background: "transparent",
-                  color: TOKENS.image,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  pointerEvents: "all",
-                  textAlign: "left",
-                  padding: 0,
-                }}
-                title="把这张图重绘成别的比例（如 1:1 → 16:9），结果生成一张新图片卡"
-              >
-                🖼 图生图 · 换比例 / 重绘 {i2iOpen ? "▾" : "▸"}
-              </button>
-              {i2iOpen && (
-                <>
-                  <textarea
-                    placeholder="可选：想保留/改动什么（留空=保留主体与风格，仅扩展到新比例）"
-                    value={i2iPrompt}
-                    style={{ ...textAreaStyle, minHeight: 56 }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onChange={(e) => setI2iPrompt(e.target.value)}
-                  />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <select
-                      style={{ ...selectStyle, flex: 1 }}
-                      value={i2iRatio}
-                      title="目标比例 → 决定后续视频比例"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onChange={(e) => setI2iRatio(e.target.value)}
-                    >
-                      {IMAGE_RATIOS.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          比例 {r.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      style={{ ...primaryBtn(TOKENS.image, i2iBusy), flex: "0 0 auto" }}
-                      disabled={i2iBusy}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleImg2Img();
-                      }}
-                    >
-                      {i2iBusy ? "重绘中…" : "生成新图 ↓"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           {motionOpen || motion ? (
             <textarea
               placeholder="运动 / 镜头提示（可选）：主体怎么动、镜头怎么走、节奏快慢…"
