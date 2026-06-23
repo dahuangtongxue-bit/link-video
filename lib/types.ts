@@ -9,7 +9,8 @@ export type PromptShape = TLBaseShape<
     name: string;
     prompt: string;
     imageModel: string;
-    size: string; // 1K / 2K / 4K
+    size: string; // 2K / 4K（清晰度档）
+    ratio: string; // 16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9（画面比例 → 决定下游视频比例）
   }
 >;
 
@@ -76,6 +77,7 @@ export type ShotShape = TLBaseShape<
     content: string; // 画面内容（核心提示词）
     imageModel: string; // 生参考帧用的图像模型
     size: string; // 参考帧分辨率 2K / 4K
+    ratio: string; // 参考帧比例 16:9 / 9:16 / ...（决定首帧形状 → 视频比例）
     videoModel: string; // 生视频用的视频模型
     refFrameUrl: string; // 已生成的参考帧 URL（用作首帧）
     status: string; // idle（镜头卡本身只是控制器）
