@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId } from "tldraw";
+import { BaseBoxShapeUtil, HTMLContainer, T, useEditor, createShapeId, createShapePropsMigrationIds, createShapePropsMigrationSequence } from "tldraw";
 import type { ShotShape } from "@/lib/types";
 import { generateImage, rehostImage, submitVideo } from "@/lib/maas";
-import { IMAGE_MODELS, IMAGE_SIZES, VIDEO_MODELS } from "@/lib/models";
+import { IMAGE_MODELS, IMAGE_SIZES, IMAGE_RATIOS, VIDEO_MODELS } from "@/lib/models";
 import { connectShapes } from "@/lib/connect";
 import {
   TOKENS,
@@ -95,7 +95,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
   const editor = useEditor();
   const {
     w, h, shotNo, title, shotSize, cameraMove, light, texture, color,
-    duration, content, imageModel, size, videoModel, refFrameUrl,
+    duration, content, imageModel, size, ratio, videoModel, refFrameUrl,
   } = shape.props;
   const shapeId = shape.id;
   const [busy, setBusy] = useState<null | "frame" | "video">(null);
@@ -143,7 +143,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
     });
     connectShapes(editor, shapeId as any, imgId as any);
     try {
-      let url = await generateImage(p, imageModel, size);
+      let url = await generateImage(p, imageModel, size, ratio);
       try {
         url = await rehostImage(url); // 转永久 URL，便于后面当首帧/参考图
       } catch {
@@ -181,7 +181,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
         firstImageUrl: useFrame ? refFrameUrl : "",
         resolution: "720p",
         duration,
-        ratio: useFrame ? "adaptive" : "16:9",
+        ratio: useFrame ? "adaptive" : (ratio || "16:9"),
       },
     });
     connectShapes(editor, shapeId as any, vidId as any);
@@ -192,7 +192,7 @@ function ShotCard({ shape }: { shape: ShotShape }) {
         model: videoModel,
         resolution: "720p",
         duration,
-        ratio: useFrame ? "adaptive" : "16:9",
+        ratio: useFrame ? "adaptive" : (ratio || "16:9"),
       });
       if (editor.getShape(vidId)) {
         // 切到 generating + taskId → 视频卡自己接管轮询
@@ -291,7 +291,10 @@ function ShotCard({ shape }: { shape: ShotShape }) {
             {/* 第一阶段：生参考帧 */}
             <div style={{ display: "flex", gap: 6 }}>
               {knob(imageModel, IMAGE_MODELS.map((m) => ({ v: m.id, label: m.label.replace("豆包图像 · ", "") })), (v) => update({ imageModel: v }))}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
               {knob(size, IMAGE_SIZES.map((s) => ({ v: s.id, label: s.label })), (v) => update({ size: v }))}
+              {knob(ratio, IMAGE_RATIOS.map((r) => ({ v: r.id, label: r.label })), (v) => update({ ratio: v }))}
             </div>
             <button
               style={{ ...primaryBtn(SHOT, busy === "frame"), width: "100%" }}
@@ -334,8 +337,26 @@ function ShotCard({ shape }: { shape: ShotShape }) {
   );
 }
 
+// 旧画布数据升级：给已存在的镜头卡补上 ratio 字段，避免清空画布。
+// 注意：ShotShape 此前没有迁移序列，这是第一条 —— 别删，否则老画布加载会校验失败。
+const shotCardVersions = createShapePropsMigrationIds("shot-card", { AddRatio: 1 });
+const shotCardMigrations = createShapePropsMigrationSequence({
+  sequence: [
+    {
+      id: shotCardVersions.AddRatio,
+      up(props: any) {
+        props.ratio = "16:9";
+      },
+      down(props: any) {
+        delete props.ratio;
+      },
+    },
+  ],
+});
+
 export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
   static override type = "shot-card" as const;
+  static override migrations = shotCardMigrations;
   static override props = {
     w: T.number,
     h: T.number,
@@ -350,6 +371,7 @@ export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
     content: T.string,
     imageModel: T.string,
     size: T.string,
+    ratio: T.string,
     videoModel: T.string,
     refFrameUrl: T.string,
     status: T.string,
@@ -370,6 +392,7 @@ export class ShotShapeUtil extends BaseBoxShapeUtil<ShotShape> {
       content: "",
       imageModel: IMAGE_MODELS[0]?.id ?? "",
       size: "2K",
+      ratio: "16:9",
       videoModel: VIDEO_MODELS[0]?.id ?? "",
       refFrameUrl: "",
       status: "idle",
