@@ -252,17 +252,17 @@ export default function Canvas() {
             gap: 14,
           }}
         >
-          <button onClick={addShotCard} disabled={!ready} style={barBtn("#0ea5e9", ready)}>
-            + 镜头卡
-          </button>
           <button onClick={addPromptCard} disabled={!ready} style={barBtn("#6366f1", ready)}>
             + 文生图片
           </button>
           <button onClick={() => fileRef.current?.click()} disabled={!ready} style={barBtn("#10b981", ready)}>
             + 上传图片
           </button>
+          <button onClick={addShotCard} disabled={!ready} style={barBtn("#0ea5e9", ready)}>
+            + 做关键帧
+          </button>
           <button onClick={addVideoCard} disabled={!ready} style={barBtn("#8b5cf6", ready)}>
-            + 生成视频
+            + 制作视频
           </button>
         </div>
         <input
