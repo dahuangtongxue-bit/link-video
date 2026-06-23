@@ -71,7 +71,7 @@ export default async (req) => {
   try {
     body = await req.json();
   } catch {}
-  const { jobId, prompt, model, size } = body || {};
+  const { jobId, prompt, model, size, ratio } = body || {};
   const accessKey = req.headers.get("x-access-key") || (body && body.accessKey) || "";
 
   const PASS = (process.env.ACCESS_PASSWORD || "").trim();
@@ -92,9 +92,20 @@ export default async (req) => {
     return new Response("ok");
   }
 
-  // 分辨率档位 → 像素。豆包全系下限 3686400 像素（2560x1440），所以没有 1K。
-  const SIZE_MAP = { "2K": "2048x2048", "4K": "4096x4096" };
-  const px = SIZE_MAP[String(size || "").toUpperCase()] || "2048x2048";
+  // 档位 × 比例 → 实际生成尺寸。约束：豆包像素下限 3,686,400、单边上限 4096。
+  // 与 lib/models.ts 的 SIZE_TABLE 保持一致——改一处记得同步另一处。
+  const SIZE_TABLE = {
+    "2K": {
+      "16:9": "2816x1584", "9:16": "1584x2816", "1:1": "2048x2048",
+      "4:3": "2304x1728", "3:4": "1728x2304", "21:9": "2940x1260",
+    },
+    "4K": {
+      "16:9": "4096x2304", "9:16": "2304x4096", "1:1": "4096x4096",
+      "4:3": "4096x3072", "3:4": "3072x4096", "21:9": "4095x1755",
+    },
+  };
+  const tier = SIZE_TABLE[String(size || "2K").toUpperCase()] || SIZE_TABLE["2K"];
+  const px = tier[String(ratio || "16:9")] || tier["16:9"];
 
   try {
     const r = await fetch(`${BASE}/v1/images/generations`, {
