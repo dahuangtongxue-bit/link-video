@@ -281,9 +281,11 @@ function VideoCard({ shape }: { shape: VideoShape }) {
   // config 态点「生成视频」：提交后状态机和图生视频完全同一条管线（轮询防御全部复用）
   // 当前处于哪种模式：源视频 > 参考图 > 首尾帧（互斥，UI 也会互斥）
   const hasInput = !!(firstImageUrl || refList.length || sourceVideoUrl);
+  // 不选任何图/视频 → 只要有提示词就走文生视频（后端 content 仅含 text）
+  const canGenerate = hasInput || !!(prompt || "").trim();
 
   async function startGenerate() {
-    if (busy || !hasInput) return;
+    if (busy || !canGenerate) return;
     setBusy(true);
     setPicking(null);
     update({ status: "submitting", error: "" });
@@ -904,7 +906,7 @@ function VideoCard({ shape }: { shape: VideoShape }) {
             {mode === "frames" && (
               <div style={{ display: "flex", gap: 8 }}>
                 <FrameSlot
-                  label="首帧（必选）"
+                  label="首帧（可选）"
                   url={firstImageUrl}
                   active={picking === "first"}
                   onPick={() => setPicking(picking === "first" ? null : "first")}
@@ -1215,13 +1217,13 @@ function VideoCard({ shape }: { shape: VideoShape }) {
                 ))}
               </select>
               <button
-                style={primaryBtn(TOKENS.video, busy || !hasInput)}
-                disabled={busy || !hasInput}
-                title={!hasInput ? "先选择图片或源视频" : ""}
+                style={primaryBtn(TOKENS.video, busy || !canGenerate)}
+                disabled={busy || !canGenerate}
+                title={!canGenerate ? "先填提示词，或选择图片/源视频" : ""}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={startGenerate}
               >
-                {busy ? "提交中…" : "生成视频"}
+                {busy ? "提交中…" : hasInput ? "生成视频" : "文生视频 →"}
               </button>
             </div>
             {error ? (
